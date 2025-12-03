@@ -41,3 +41,9 @@ table th {
     background: #3498db;
     color: white;
 }
+
+#map {
+    height: 300px;
+    width: 100%;
+    margin-top: 10px;
+}

@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sensor Dashboard</title>
 
-    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
     <h1>📡 Sensor Dashboard</h1>
-
+    <!--即時感測資料面板 -->
     <div class="card">
         <h2>即時感測資料</h2>
         <div id="realtime">
@@ -23,7 +24,7 @@
             <p><strong>時間：</strong><span id="timestamp">--</span></p>
         </div>
     </div>
-
+    <!--感測資料記錄面板 -->
     <div class="card">
         <h2>資料紀錄</h2>
         <table id="dataTable">
@@ -41,7 +42,22 @@
         </table>
     </div>
 
+    <!--gps-->
+    <div class="card">
+        <h2>GPS Map</h2>
+        <div id="map"></div>
+    </div>
+
+    <!--溫濕度圖表-->
+    <div class="card">
+        <h2>Temp / Hum Chart</h2>
+        <canvas id="sensorChart"></canvas>
+    </div>
+
+
     <!-- 載入 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/static/script.js"></script>
 </body>
 </html>
