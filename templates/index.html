@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Dashboard</title>
+
+    
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <h1>📡 Sensor Dashboard</h1>
+
+    <div class="card">
+        <h2>即時感測資料</h2>
+        <div id="realtime">
+            <p><strong>溫度：</strong><span id="temp">--</span> °C</p>
+            <p><strong>濕度：</strong><span id="hum">--</span> %</p>
+            <p><strong>GPS 衛星：</strong><span id="sat">--</span></p>
+            <p><strong>經度：</strong><span id="lng">--</span></p>
+            <p><strong>緯度：</strong><span id="lat">--</span></p>
+            <p><strong>時間：</strong><span id="timestamp">--</span></p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>資料紀錄</h2>
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>時間</th>
+                    <th>溫度</th>
+                    <th>濕度</th>
+                    <th>緯度</th>
+                    <th>經度</th>
+                    <th>衛星</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- 載入 JS -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
