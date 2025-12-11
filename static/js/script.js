@@ -34,14 +34,16 @@ const sensorChart = new Chart(ctx, {
         labels: [],
         datasets: [
             {
-                label: "Temperature (°C)",
+                label: "溫度 (°C)",
                 borderColor: "red",
+                backgroundColor: "red",
                 data: [],
                 fill: false
             },
             {
-                label: "Humidity (%)",
+                label: "濕度 (%)",
                 borderColor: "blue",
+                backgroundColor: "blue",
                 data: [],
                 fill: false
             }
