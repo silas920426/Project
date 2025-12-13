@@ -90,19 +90,19 @@ def get_data():
     return jsonify([dict(row) for row in rows])
 
 # ========== 頁面 ==========
-@app.route("/")
+@app.route("/")          #網頁進去預設導向 login
 def root():
-    return redirect("/login")
+    return redirect("/login")   
 
-@app.route("/login")
+@app.route("/login")     #登入頁面
 def login_redirect():
     return render_template("login.html")
 
-@app.route("/register")
+@app.route("/register")  #註冊頁面
 def register_page():
     return render_template("register.html")
 
-@app.route("/index")
+@app.route("/index")     #主頁面（Dashboard）
 def index():
     return render_template("index.html")
 
