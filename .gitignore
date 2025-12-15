@@ -8,7 +8,7 @@ __pycache__/
 *.pyc
 
 # Database
-*.db
+*.db*
 
 # IDE / OS file
 .vscode/
