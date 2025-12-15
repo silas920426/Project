@@ -1,5 +1,13 @@
-// 後端 API
-const API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data";
+// 後端 API (若有需要可修改 ngrok 網址)
+const API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data"; 
+
+// 時間格式化函式
+function formatToTWTime(utcStr) {
+    if (!utcStr) return "--";
+    let isoStr = utcStr.replace(" ", "T") + "Z";
+    let date = new Date(isoStr);
+    return date.toLocaleString('zh-TW', { hour12: false });
+}
 
 //==================================================
 //  🌍 Leaflet Map 初始化
@@ -24,7 +32,7 @@ function updateMap(lat, lng) {
 
 
 //==================================================
-// 📊 Chart.js：初始化折線圖（溫度 + 溼度）
+// 📊 Chart.js 初始化
 //==================================================
 const ctx = document.getElementById("sensorChart").getContext("2d");
 
@@ -59,74 +67,93 @@ const sensorChart = new Chart(ctx, {
     }
 });
 
-
 //==================================================
-//  📥 取得資料 + 更新地圖 + 更新圖表
+// 🔄 UI 更新函式 (統一處理畫面刷新)
 //==================================================
-async function loadData() {
-    try {
-        const res = await fetch(API_URL);
-        const data = await res.json();
-        if (data.length === 0) return;
+function updateDashboard(data) {
+    if (!data || data.length === 0) return;
 
-        const last = data[data.length - 1];
+    const last = data[data.length - 1];
 
-        //----------------------------------
-        //   更新即時資料顯示
-        //----------------------------------
-        document.getElementById("temp").innerText = last.temp;
-        document.getElementById("hum").innerText = last.hum;
-        document.getElementById("sat").innerText = last.sat ?? "--";
-        document.getElementById("lat").innerText = last.lat ?? "--";
-        document.getElementById("lng").innerText = last.lng ?? "--";
-        document.getElementById("timestamp").innerText = last.timestamp;
+    // 1. 更新即時數值面板
+    document.getElementById("temp").innerText = last.temp;
+    document.getElementById("hum").innerText = last.hum;
+    document.getElementById("sat").innerText = last.sat ?? "--";
+    document.getElementById("lat").innerText = last.lat ?? "--";
+    document.getElementById("lng").innerText = last.lng ?? "--";
+    document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
+    document.getElementById("btn").innerText = last.btn === 1 ? "按下" : "未按";
 
-        //----------------------------------
-        //   更新資料表（顯示最近 20 筆）
-        //----------------------------------
-        const tbody = document.querySelector("#dataTable tbody");
-        tbody.innerHTML = "";
+    // 2. 更新表格 (顯示最新的 20 筆，最新的在最上面)
+    const tbody = document.querySelector("#dataTable tbody");
+    tbody.innerHTML = "";
 
-        data.slice(-20).reverse().forEach(item => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${item.timestamp}</td>
-                <td>${item.temp}</td>
-                <td>${item.hum}</td>
-                <td>${item.lat ?? "--"}</td>
-                <td>${item.lng ?? "--"}</td>
-                <td>${item.sat ?? "--"}</td>
-            `;
-            tbody.appendChild(row);
-        });
+    // 複製陣列並反轉，取前 20 筆
+    const tableData = [...data].reverse().slice(0, 20);
+    
+    tableData.forEach(item => {
+        const row = document.createElement("tr");
+        let localTime = formatToTWTime(item.timestamp);
+        row.innerHTML = `
+            <td>${localTime}</td>
+            <td>${item.temp}</td>
+            <td>${item.hum}</td>
+            <td>${item.lat ?? "--"}</td>
+            <td>${item.lng ?? "--"}</td>
+            <td>${item.sat ?? "--"}</td>
+            <td>${item.btn === 1 ? "按下" : "-"}</td>
+        `;
+        tbody.appendChild(row);
+    });
 
-        //----------------------------------
-        //   更新地圖
-        //----------------------------------
-        updateMap(last.lat, last.lng);
+    // 3. 更新地圖
+    updateMap(last.lat, last.lng);
+    
+    // 4. 更新圖表 (使用全部回傳的 50 筆資料畫趨勢)
+    sensorChart.data.labels = [];
+    sensorChart.data.datasets[0].data = [];
+    sensorChart.data.datasets[1].data = [];
 
-        //----------------------------------
-        //   更新折線圖（最多 30 筆）
-        //----------------------------------
-        sensorChart.data.labels.push(last.timestamp);
-        sensorChart.data.datasets[0].data.push(last.temp);
-        sensorChart.data.datasets[1].data.push(last.hum);
+    data.forEach(d => {
+        let fullTime = formatToTWTime(d.timestamp); 
+        let timeOnly = fullTime.split(" ")[1]; 
+        sensorChart.data.labels.push(timeOnly);
+        sensorChart.data.datasets[0].data.push(d.temp);
+        sensorChart.data.datasets[1].data.push(d.hum);
+    });
 
-        // 只保留最近 30 筆
-        if (sensorChart.data.labels.length > 30) {
-            sensorChart.data.labels.shift();
-            sensorChart.data.datasets[0].data.shift();
-            sensorChart.data.datasets[1].data.shift();
-        }
-
-        sensorChart.update();
-
-    } catch (err) {
-        console.error("Failed to load:", err);
-    }
+    sensorChart.update();
 }
 
+//==================================================
+// 📡 SSE 連線設定 (取代 setInterval)
+//==================================================
+function startStream() {
+    console.log("嘗試建立 SSE 連線...");
+    const evtSource = new EventSource("/stream");
 
-// 每 10 秒更新一次（你的原始設定）
-setInterval(loadData, 10000);
-loadData();
+    // 當收到後端推送的資料時
+    evtSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            console.log("收到更新資料，筆數：", data.length);
+            updateDashboard(data);
+        } catch (e) {
+            console.error("資料解析錯誤:", e);
+        }
+    };
+
+    // 連線錯誤處理
+    evtSource.onerror = function(err) {
+        console.error("SSE 連線中斷或錯誤:", err);
+        evtSource.close();
+        // 5秒後嘗試重連
+        setTimeout(startStream, 5000);
+    };
+}
+
+// 啟動 SSE 監聽
+startStream();
+
+// 頁面載入時也可先呼叫一次 API 取得初始畫面 (選用)
+fetch(API_URL).then(res => res.json()).then(data => updateDashboard(data));

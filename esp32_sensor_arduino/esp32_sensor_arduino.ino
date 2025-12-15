@@ -6,327 +6,328 @@
 #include <HTTPClient.h>
 #include <WiFiMulti.h>
 
-//=================================================================
-//   ★ 切換模式：Sensor Node / Gateway Node
-//=================================================================
-#define INITIATING_NODE   // Sensor Node
-// #define INITIATING_NODE // Gateway Node（註解上面這行即可）
+// ★★★★★ 設定角色 ★★★★★
+//#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 請註解掉此行
 
-//=================================================================
-//   ★ LoRa 腳位 / 物件
-//=================================================================
+// --- LoRa 定義 ---
 #define LORA_SCK    5
 #define LORA_MISO   35
 #define LORA_MOSI   27
 #define LORA_CS     18
 #define LORA_DIO2   36
 #define LORA_BUSY   34
-#define LORA_RESET   0
+#define LORA_RESET  0
 
 SPIClass SPI_LORA(VSPI);
 LLCC68 radio = new Module(LORA_CS, LORA_DIO2, LORA_RESET, LORA_BUSY, SPI_LORA);
 
-//=================================================================
-//   ★ OLED
-//=================================================================
+// --- OLED 定義 ---
 #define I2C_SDA     4
 #define I2C_SCL     15
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(
-  U8G2_R0, U8X8_PIN_NONE, I2C_SCL, I2C_SDA
-);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, I2C_SCL, I2C_SDA);
 
-//=================================================================
-//   ★ AM2120（Sensor 專用）
-//=================================================================
-#define AM2120_PIN  32
+// --- 硬體腳位 ---
+#define BUTTON_PIN  25  
+#define BUZZER_PIN  21  
+
+// --- 全域變數 ---
 float temperature = 0.0f;
 float humidity    = 0.0f;
+double gpsLat = 0, gpsLng = 0;
+int gpsSat = 0;
 
+//=================================================================
+//   Sensor 專用邏輯
+//=================================================================
+#ifdef INITIATING_NODE
+
+#define AM2120_PIN  32
+#define GPS_RX 23
+#define GPS_TX 12
+TinyGPSPlus gps;
+HardwareSerial GPS_Serial(1);
+
+// 讀取 AM2120
 bool readAM2120(float &h, float &t) {
-  uint8_t data[5] = {0, 0, 0, 0, 0};
+  uint8_t data[5] = {0};
   pinMode(AM2120_PIN, OUTPUT);
-  digitalWrite(AM2120_PIN, LOW);
-  delayMicroseconds(1800);
-  digitalWrite(AM2120_PIN, HIGH);
-  delayMicroseconds(30);
+  digitalWrite(AM2120_PIN, LOW); delayMicroseconds(1800);
+  digitalWrite(AM2120_PIN, HIGH); delayMicroseconds(30);
   pinMode(AM2120_PIN, INPUT);
-
   unsigned long tStart = micros();
   while (digitalRead(AM2120_PIN) == HIGH) if (micros() - tStart > 100) return false;
   while (digitalRead(AM2120_PIN) == LOW)  if (micros() - tStart > 200) return false;
   while (digitalRead(AM2120_PIN) == HIGH) if (micros() - tStart > 200) return false;
-
   for (int i = 0; i < 40; i++) {
     while (digitalRead(AM2120_PIN) == LOW);
     unsigned long tHigh = micros();
     while (digitalRead(AM2120_PIN) == HIGH);
-    if ((micros() - tHigh) > 40)
-      data[i/8] |= (1 << (7 - (i%8)));
+    if ((micros() - tHigh) > 40) data[i/8] |= (1 << (7 - (i%8)));
   }
-
   if ((uint8_t)(data[0]+data[1]+data[2]+data[3]) != data[4]) return false;
-
   h = ((data[0]<<8) + data[1]) * 0.1f;
   t = (((data[2]&0x7F)<<8) + data[3]) * 0.1f;
   if (data[2] & 0x80) t = -t;
   return true;
 }
 
-//=================================================================
-//   ★ GPS（Sensor 專用）
-//=================================================================
-#define GPS_RX 23
-#define GPS_TX 12
-
-TinyGPSPlus gps;
-HardwareSerial GPS_Serial(1);
-
-double gpsLat = 0;
-double gpsLng = 0;
-int gpsSat   = 0;
-bool gpsFix  = false;
-
 void updateGPS() {
-  while (GPS_Serial.available())
-    gps.encode(GPS_Serial.read());
-
-  gpsSat = gps.satellites.isValid() ? gps.satellites.value() : 0;
-
-  gpsFix = gps.location.isValid() && gps.location.age() < 2000 && gpsSat >= 3;
-
-  if (gpsFix) {
+  while (GPS_Serial.available()) gps.encode(GPS_Serial.read());
+  if (gps.location.isValid()) {
     gpsLat = gps.location.lat();
     gpsLng = gps.location.lng();
+    gpsSat = gps.satellites.value();
   }
 }
 
-// =================================================================
-// ★ 新增：Button & Buzzer 腳位
-// =================================================================
-#define BUTTON_PIN  25  
-#define BUZZER_PIN  21  
-
-int buzzMode = 0;       // 0: 關閉, 1: 開啟
-bool lastButtonState = HIGH; // 按鈕上一次的狀態 (用於邊緣檢測)
-
-
-//=================================================================
-//   ★ Sensor OLED 畫面
-//=================================================================
-
-void drawSensorStandby(unsigned long lastSend) {
+void showMsg(const char* line1, const char* line2) {
   oled.clearBuffer();
   oled.setFont(u8g2_font_ncenB08_tr);
-
-  // T/H
-  oled.setCursor(0, 12);
-  oled.printf("T:%.1fC  H:%.1f%%", temperature, humidity);
-
-  // Lat
-  oled.setCursor(0, 24);
-  oled.print("Lat:");
-  oled.print(gpsLat, 4);
-
-  // Lng
-  oled.setCursor(0, 36);
-  oled.print("Lng:");
-  oled.print(gpsLng, 4);
-
-  // 倒數
-  unsigned long diff = millis() - lastSend;
-  int countdown = 10 - diff / 1000;
-  if (countdown < 0) countdown = 0;
-
-  oled.setCursor(0, 48);
-  oled.print("Next TX: ");
-  oled.print(countdown);
-  oled.print("s");
-
+  oled.setCursor(0, 16); oled.print(line1);
+  oled.setCursor(0, 32); oled.print(line2);
   oled.sendBuffer();
 }
 
-void showStatus(const char* msg) {
-  oled.clearBuffer();
-  oled.setFont(u8g2_font_ncenB08_tr);
-  oled.setCursor(0, 24);
-  oled.print(msg);
-  oled.sendBuffer();
+// 統一發送函式：處理發送 + 等待 Buzzer 回應
+void sendSensorData(bool isUrgent) {
+    readAM2120(humidity, temperature);
+    int btnState = isUrgent ? 1 : 0; 
+
+    String payload = String(temperature, 1) + "," + String(humidity, 1) + "," +
+                     String(gpsLat, 6) + "," + String(gpsLng, 6) + "," +
+                     String(gpsSat) + "," + String(btnState);
+
+    if (isUrgent) showMsg("BTN PRESSED!", "Sending...");
+    else showMsg("Polled", "Sending...");
+    
+    Serial.println("Sending: " + payload);
+    radio.transmit(payload);
+
+    // 等待回應
+    unsigned long waitStart = millis();
+    bool buzzTriggered = false;
+    radio.startReceive(); 
+
+    while(millis() - waitStart < 3000) {
+        String reply;
+        if (radio.receive(reply) == RADIOLIB_ERR_NONE) {
+            if (reply == "CMD_BUZZ") {
+                buzzTriggered = true;
+                break;
+            }
+        }
+    }
+
+    if (buzzTriggered) {
+        showMsg("ALARM!", "BUZZER ON");
+        for(int i=0; i<30; i++) { 
+            digitalWrite(BUZZER_PIN, LOW); delay(50);
+            digitalWrite(BUZZER_PIN, HIGH); delay(50);
+        }
+    }
+    showMsg("Sensor Listening...", "Waiting...");
+    radio.startReceive(); 
 }
 
+#else
 //=================================================================
-//   ★ Gateway：WiFi + HTTP
+//   Gateway 專用邏輯
 //=================================================================
-#ifndef INITIATING_NODE
-
 WiFiMulti wifiMulti;
-
-const char* ssid1     = "Stephen_3F";
-const char* password1 = "root1234";
-
-const char* ssid2     = "enohpi61";
-const char* password2 = "rootroot";
-
 String API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data";
 
-volatile bool loraReceivedFlag = false;
-
-ICACHE_RAM_ATTR
-void setFlag() { loraReceivedFlag = true; }
-
 void initWiFi() {
-  wifiMulti.addAP(ssid1, password1);
-  wifiMulti.addAP(ssid2, password2);
-
+  wifiMulti.addAP("Stephen_3F", "root1234");
+  wifiMulti.addAP("enohpi61", "rootroot");
+  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Connecting WiFi..."); oled.sendBuffer();
   while (wifiMulti.run() != WL_CONNECTED) delay(500);
+  oled.setCursor(0,32); oled.print("WiFi OK"); oled.sendBuffer();
 }
 
-void sendToBackend(float t, float h, double lat, double lng, int sat) {
+// 修改後的上傳函式：支援「正常資料」與「無資料(Timeout)」
+bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int sat, int btn) {
+  if(wifiMulti.run() != WL_CONNECTED) return false;
+
   HTTPClient http;
   http.begin(API_URL);
   http.addHeader("Content-Type", "application/json");
 
   String json = "{";
-  json += "\"temp\":" + String(t) + ",";
-  json += "\"hum\":" + String(h) + ",";
-  json += "\"lat\":" + String(lat,6) + ",";
-  json += "\"lng\":" + String(lng,6) + ",";
-  json += "\"sat\":" + String(sat);
+  if (isValid) {
+      json += "\"status\":\"ok\","; 
+      json += "\"temp\":" + String(t) + ",";
+      json += "\"hum\":" + String(h) + ",";
+      json += "\"lat\":" + String(lat, 6) + ",";
+      json += "\"lng\":" + String(lng, 6) + ",";
+      json += "\"sat\":" + String(sat) + ",";
+      json += "\"button\":" + String(btn);
+  } else {
+      // 逾時沒收到資料，上傳 NULL 或 0，並標記 timeout
+      json += "\"status\":\"timeout\","; 
+      json += "\"temp\":0,";
+      json += "\"hum\":0,";
+      json += "\"lat\":0,";
+      json += "\"lng\":0,";
+      json += "\"sat\":0,";
+      json += "\"button\":0";
+  }
   json += "}";
 
-  http.POST(json);
+  int httpCode = http.POST(json);
+  String payload = http.getString();
   http.end();
+
+  Serial.println("Server Response: " + payload);
+  if (payload.indexOf("BUZZER_ON") > 0) return true; 
+  return false;
 }
-
-// Parse
-bool parsePayload(String s, float &t, float &h, double &lat, double &lng, int &sat) {
-  int p1 = s.indexOf(',');
-  int p2 = s.indexOf(',', p1+1);
-  int p3 = s.indexOf(',', p2+1);
-  int p4 = s.indexOf(',', p3+1);
-
-  if (p1<0 || p2<0 || p3<0 || p4<0) return false;
-
-  t = s.substring(0,p1).toFloat();
-  h = s.substring(p1+1,p2).toFloat();
-  lat = s.substring(p2+1,p3).toDouble();
-  lng = s.substring(p3+1,p4).toDouble();
-  sat = s.substring(p4+1).toInt();
-
-  return true;
-}
-
 #endif
 
 //=================================================================
-//   ★ Setup
+//   SETUP
 //=================================================================
 void setup() {
   Serial.begin(115200);
   oled.begin();
-
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // 使用內建上拉電阻，按鈕平常是 HIGH，按下是 LOW
-  
-  pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, HIGH);     // 預設關閉
+  oled.setFont(u8g2_font_ncenB08_tr);
 
   SPI_LORA.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
-  radio.begin(923.875, 125.0, 7, 5, 0x12, 13, 10);
+  int state = radio.begin(923.875, 125.0, 7, 5, 0x12, 13, 10);
+  if (state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("LoRa init success!"));
+  } else {
+    while (true);
+  }
 
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, HIGH); 
+
+//sensor端
 #ifdef INITIATING_NODE
   GPS_Serial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
+  showMsg("Sensor Hybrid", "Ready");
+  radio.startReceive(); 
 #else
+//Gateway端
   initWiFi();
-  radio.setDio1Action(setFlag);
-  radio.startReceive();
+  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Gateway Active"); oled.sendBuffer();
+  radio.startReceive(); 
 #endif
 }
 
 //=================================================================
-//   ★ Loop
+//   LOOP
 //=================================================================
 void loop() {
 
 #ifdef INITIATING_NODE
-  //==================== Sensor Node ====================
-
+  // [Sensor 端] 保持不變
   updateGPS();
-  readAM2120(humidity, temperature);
 
+  if (digitalRead(BUTTON_PIN) == LOW) {
+      delay(50);
+      if (digitalRead(BUTTON_PIN) == LOW) {
+          Serial.println("Button Pressed! Sending actively...");
+          sendSensorData(true); 
+          while(digitalRead(BUTTON_PIN) == LOW) { delay(10); }
+      }
+  }
 
-// ========== 按鈕 + 蜂鳴器（含防抖動） ==========
-
-static bool buzzerOn = false;
-static unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 30;  // 30ms 防抖動
-int reading = digitalRead(BUTTON_PIN);
-// 偵測到變化時重置防抖動計時
-if (reading != lastButtonState) {
-    lastDebounceTime = millis();
-}
-// 超過 debounceDelay 後才確認狀態
-if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (reading == LOW) {
-        buzzerOn = true;
-    } else {
-        buzzerOn = false;
-    }
-}
-// 根據結果控制蜂鳴器（低電平響）
-digitalWrite(BUZZER_PIN, buzzerOn ? LOW : HIGH);
-lastButtonState = reading;
-//================================================
-
-  static unsigned long lastSend = 0;
-
-  drawSensorStandby(lastSend);
-
-  // 到時間送
-  if (millis() - lastSend >= 10000) {
-    lastSend = millis();
-
-    String payload =
-      String(temperature,1) + "," +
-      String(humidity,1)    + "," +
-      String(gpsLat,6)      + "," +
-      String(gpsLng,6)      + "," +
-      String(gpsSat);
-
-    showStatus("Sending...");
-
-    int state = radio.transmit(payload);
-
-    if (state == RADIOLIB_ERR_NONE) {
-      showStatus("TX OK");
-
-    } else {
-      oled.clearBuffer();
-      oled.setCursor(0,24);
-      oled.printf("TX Error:%d", state);
-      oled.sendBuffer();
-    }
-
-    delay(1000);  // 顯示 1 秒，再回到主畫面
+  String str;
+  if (radio.receive(str) == RADIOLIB_ERR_NONE) {
+      if (str == "REQ") {
+          Serial.println("Poll received! Sending...");
+          sendSensorData(false);
+      }
   }
 
 #else
-  //==================== Gateway Node ====================
+  // ------------------------------------------------
+  // [Gateway 端] 包含逾時邏輯
+  // ------------------------------------------------
+  static unsigned long lastPollTime = 0;
+  static unsigned long pollStartTime = 0; // 記錄發出 REQ 的時間
+  static bool isWaitingForReply = false;  // 標記是否正在等回覆
+  
+  // 1. 定時任務：每 60 秒發送一次 REQ
+  if (millis() - lastPollTime > 60000) {
+      lastPollTime = millis();
+      
+      Serial.println("Time to Poll, sending REQ...");
+      oled.setCursor(0,16); oled.print("Polling..."); oled.sendBuffer();
 
-  if (loraReceivedFlag) {
-    loraReceivedFlag = false;
-
-    String str;
-    radio.readData(str);
-
-    float t,h;
-    double lat,lng;
-    int sat;
-
-    if (parsePayload(str, t,h,lat,lng,sat)) {
-      sendToBackend(t,h,lat,lng,sat);
-    }
-
-    radio.startReceive();
+      radio.transmit("REQ"); 
+      radio.startReceive();
+      
+      // ★ 設定逾時監控旗標
+      isWaitingForReply = true;
+      pollStartTime = millis();
   }
 
+  // 2. 接收任務
+  String receivedStr;
+  if (radio.receive(receivedStr) == RADIOLIB_ERR_NONE) {
+      // ★ 收到資料了，取消逾時等待
+      isWaitingForReply = false;
+      
+      Serial.println("RX: " + receivedStr);
+      if (receivedStr.length() > 5) {
+          float t, h;
+          double lat, lng;
+          int sat, btn;
+          
+          int p1 = receivedStr.indexOf(',');
+          int p2 = receivedStr.indexOf(',', p1+1);
+          int p3 = receivedStr.indexOf(',', p2+1);
+          int p4 = receivedStr.indexOf(',', p3+1);
+          int p5 = receivedStr.indexOf(',', p4+1);
+
+          if (p1 > 0) {
+              t = receivedStr.substring(0,p1).toFloat();
+              h = receivedStr.substring(p1+1,p2).toFloat();
+              lat = receivedStr.substring(p2+1,p3).toDouble();
+              lng = receivedStr.substring(p3+1,p4).toDouble();
+              sat = receivedStr.substring(p4+1).toInt();
+              btn = receivedStr.substring(p5+1).toInt();
+
+              oled.clearBuffer();
+              oled.setCursor(0,16); oled.printf("RX Data (Btn:%d)", btn);
+              oled.setCursor(0,32); oled.print("Uploading...");
+              oled.sendBuffer();
+
+              // ★ 正常上傳 (isValid = true)
+              bool triggerBuzzer = sendToBackend(true, t, h, lat, lng, sat, btn);
+
+              if (triggerBuzzer) {
+                  Serial.println("Triggering Remote Buzzer...");
+                  delay(50); 
+                  radio.transmit("CMD_BUZZ");
+                  radio.startReceive(); 
+              } else {
+                  oled.setCursor(0,48); oled.print("Upload OK"); 
+                  oled.sendBuffer();
+              }
+          }
+      }
+  }
+
+  // 3. ★ 逾時檢查邏輯
+  // 如果還在等 (isWaitingForReply == true) 且時間過 5 秒
+  if (isWaitingForReply && (millis() - pollStartTime > 5000)) {
+      isWaitingForReply = false; // 停止等待
+
+      Serial.println("Poll Timeout! No Data.");
+      oled.clearBuffer();
+      oled.setCursor(0,16); oled.print("Poll Timeout");
+      oled.setCursor(0,32); oled.print("Upld Empty...");
+      oled.sendBuffer();
+
+      // ★ 逾時上傳 (isValid = false)
+      sendToBackend(false, 0, 0, 0, 0, 0, 0);
+      
+      oled.setCursor(0,48); oled.print("Empty Sent");
+      oled.sendBuffer();
+  }
 #endif
 }
