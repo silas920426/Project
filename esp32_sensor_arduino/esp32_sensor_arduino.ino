@@ -7,7 +7,7 @@
 #include <WiFiMulti.h>
 
 // ★★★★★ 設定角色 ★★★★★
-//#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 請註解掉此行
+#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 請註解掉此行
 
 // --- LoRa 定義 ---
 #define LORA_SCK    5
@@ -311,9 +311,7 @@ void loop() {
           }
       }
   }
-
-  // 3. ★ 逾時檢查邏輯
-  // 如果還在等 (isWaitingForReply == true) 且時間過 5 秒
+// 如果超過5秒沒收到資料則回傳0 0 0 0 0 0
   if (isWaitingForReply && (millis() - pollStartTime > 5000)) {
       isWaitingForReply = false; // 停止等待
 

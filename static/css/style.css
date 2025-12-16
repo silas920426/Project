@@ -1,49 +1,259 @@
-body {
-    background: #f5f6fa;
-    font-family: "Microsoft JhengHei", sans-serif;
+:root {
+    --sidebar-bg: #2c3e50;
+    --sidebar-text: #ecf0f1;
+    --active-color: #3498db;
+    --main-bg: #f4f7f6;
+    --card-bg: #ffffff;
+}
+
+* {
+    box-sizing: border-box;
     margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: "Microsoft JhengHei", sans-serif;
+    background-color: var(--main-bg);
+    height: 100vh;
+    overflow: hidden; /* 防止整頁捲動，只捲動內容區 */
+}
+
+/* --- 佈局容器 --- */
+.app-container {
+    display: flex;
+    height: 100vh;
+}
+
+/* --- 側邊欄 Aside --- */
+.sidebar {
+    width: 260px;
+    background-color: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
     padding: 20px;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+
+.sidebar .logo h2 {
+    text-align: center;
+    margin-bottom: 40px;
+    font-size: 1.5rem;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 20px;
+    color: #fff;
+}
+
+.sidebar nav ul {
+    list-style: none;
+    padding: 0;
+}
+
+.nav-item {
+    padding: 15px 20px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-item:hover {
+    background-color: rgba(255,255,255,0.1);
+}
+
+.nav-item.active {
+    background-color: var(--active-color);
+    font-weight: bold;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
+
+.logout-area {
+    margin-top: auto; /* 推到底部 */
+}
+
+.btn-logout {
+    width: 100%;
+    padding: 12px;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.btn-logout:hover {
+    background-color: #c0392b;
+}
+
+/* --- 主內容區 Main --- */
+.content {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto; /* 內容過長時出現捲軸 */
+    position: relative;
+}
+
+/* 分頁切換邏輯 */
+.tab-content {
+    display: none; /* 預設隱藏 */
+    animation: fadeIn 0.4s ease;
+}
+
+.tab-content.active {
+    display: block; /* 加上 active class 才顯示 */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 h1 {
-    text-align: center;
+    margin-bottom: 20px;
+    color: #34495e;
+}
+
+/* --- 卡片通用樣式 --- */
+.card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+/* --- 首頁 Grid 佈局 (數據+地圖) --- */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr; /* 左邊固定寬，右邊佔滿 */
+    gap: 20px;
+    height: 600px;
+}
+
+.realtime-list p {
+    margin: 8px 0;
+}
+
+.realtime-list .data-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 1.1rem;
+}
+
+.realtime-list .val {
+    font-weight: bold;
     color: #2c3e50;
 }
 
-.card {
-    background: #fff;
-    padding: 20px;
-    margin: 20px auto;
-    width: 90%;
-    max-width: 800px;
-    border-radius: 12px;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+#map {
+    width: 100%;
+    height: 100%;
+    min-height: 400px;
+    border-radius: 8px;
+    z-index: 1;
 }
 
-#realtime p {
-    font-size: 1.1rem;
-    margin: 6px 0;
+.map-card {
+    display: flex;
+    flex-direction: column;
+    padding: 15px; /* 稍微減少 padding 給地圖更多空間 */
 }
 
+/* --- 溫濕度大面板 --- */
+.th-container {
+    display: flex;
+    gap: 20px;
+}
+
+.big-card {
+    flex: 1;
+    text-align: center;
+    padding: 40px;
+}
+
+.big-value {
+    font-size: 4rem;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.temp-card .big-value { color: #e67e22; }
+.hum-card .big-value { color: #3498db; }
+
+/* --- 圖表 --- */
+.chart-container {
+    position: relative;
+    height: 60vh; /* 讓圖表高度隨視窗調整 */
+}
+
+/* --- 表格 --- */
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 15px;
 }
 
-table th, table td {
-    border: 1px solid #ccc;
-    padding: 10px 8px;
+th, td {
+    padding: 12px;
     text-align: center;
+    border-bottom: 1px solid #eee;
+    border: none; /* 移除原本的邊框風格，改用底線 */
 }
 
-table th {
-    background: #3498db;
-    color: white;
+th {
+    background-color: #f8f9fa;
+    color: #666;
+    font-weight: bold;
+    border: none;
 }
 
-#map {
-    height: 300px;
-    width: 100%;
-    margin-top: 10px;
+tr:hover {
+    background-color: #f1f1f1;
+}
+
+/* --- RWD 手機版適配 --- */
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        height: auto;
+        padding: 10px;
+        flex-direction: row; /* 手機版變成橫向選單 */
+        overflow-x: auto;
+        align-items: center;
+    }
+
+    .sidebar .logo {
+        display: none; /* 手機版隱藏 Logo 節省空間 */
+    }
+    
+    .nav-item {
+        font-size: 0.9rem;
+        padding: 10px;
+        white-space: nowrap;
+    }
+    
+    .dashboard-grid {
+        grid-template-columns: 1fr; /* 變回單欄 */
+        height: auto;
+    }
+
+    #map {
+        height: 300px;
+    }
+
+    .th-container {
+        flex-direction: column;
+    }
 }

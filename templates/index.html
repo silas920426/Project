@@ -4,75 +4,158 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sensor Dashboard</title>
-
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <script>
-    if (!localStorage.getItem("loggedIn")) {
-    window.location.href = "/login"; // 未登入 → 回登入頁
-    }
+        if (!localStorage.getItem("loggedIn")) {
+            window.location.href = "/login"; 
+        }
     </script>
 
-    <h1>📡 Sensor Dashboard</h1>
-    <!--即時感測資料面板 -->
-    <div class="card">
-        <h2>即時感測資料</h2>
-        <div id="realtime">
-            <p><strong>溫度：</strong><span id="temp">--</span> °C</p>
-            <p><strong>濕度：</strong><span id="hum">--</span> %</p>
-            <p><strong>GPS 衛星：</strong><span id="sat">--</span></p>
-            <p><strong>經度：</strong><span id="lng">--</span></p>
-            <p><strong>緯度：</strong><span id="lat">--</span></p>
-            <p><strong>按鈕狀態：</strong><span id="btn">--</span></p>
-            <p><strong>時間：</strong><span id="timestamp">--</span></p>
-        </div>
-    </div>
-    <!--感測資料記錄面板 -->
-    <div class="card">
-        <h2>資料紀錄(近20筆)</h2>
-        <table id="dataTable">
-            <thead>
-                <tr>
-                    <th>時間</th>
-                    <th>溫度</th>
-                    <th>濕度</th>
-                    <th>緯度</th>
-                    <th>經度</th>
-                    <th>衛星</th>
-                    <th>按鈕</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <h2>災害長者緊急通訊系統</h2>
+            </div>
+            <nav>
+                <ul>
+                    <li class="nav-item active" onclick="switchTab('tab-home', this)">
+                        <i class="fa-solid fa-house-signal"></i> 即時監控 & GPS
+                    </li>
+                    <li class="nav-item" onclick="switchTab('tab-th', this)">
+                        <i class="fa-solid fa-temperature-half"></i> 溫濕度面板
+                    </li>
+                    <li class="nav-item" onclick="switchTab('tab-chart', this)">
+                        <i class="fa-solid fa-chart-line"></i> 趨勢圖表
+                    </li>
+                    <li class="nav-item" onclick="switchTab('tab-history', this)">
+                        <i class="fa-solid fa-table-list"></i> 歷史紀錄
+                    </li>
+                </ul>
+            </nav>
+            <div class="logout-area">
+                <button onclick="logout()" class="btn-logout">
+                    <i class="fa-solid fa-right-from-bracket"></i> 登出
+                </button>
+            </div>
+        </aside>
+
+        <main class="content">
+            
+            <section id="tab-home" class="tab-content active">
+                <h1>即時監控中心</h1>
+                <div class="dashboard-grid">
+                    <div class="card data-card">
+                        <h2><i class="fa-solid fa-bolt"></i> 最新數據</h2>
+                        <div id="realtime" class="realtime-list">
+                            <p><strong>時間：</strong><span id="timestamp">--</span></p>
+                            <div class="data-row">
+                                <span>溫度</span> <span class="val"><span id="temp">--</span> °C</span>
+                            </div>
+                            <div class="data-row">
+                                <span>濕度</span> <span class="val"><span id="hum">--</span> %</span>
+                            </div>
+                            <div class="data-row">
+                                <span>GPS 衛星</span> <span class="val"><span id="sat">--</span></span>
+                            </div>
+                            <div class="data-row">
+                                <span>按鈕狀態</span> <span class="val" id="btn">--</span>
+                            </div>
+                            <hr>
+                            <p><small>經度：<span id="lng">--</span></small></p>
+                            <p><small>緯度：<span id="lat">--</span></small></p>
+                        </div>
+                    </div>
+
+                    <div class="card map-card">
+                        <h2><i class="fa-solid fa-map-location-dot"></i> 裝置定位</h2>
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tab-th" class="tab-content">
+                <h1>環境監測</h1>
+                <div class="th-container">
+                    <div class="card big-card temp-card">
+                        <h3>溫度 Temperature</h3>
+                        <div class="big-value"><span id="big-temp">--</span> <small>°C</small></div>
+                    </div>
+                    <div class="card big-card hum-card">
+                        <h3>濕度 Humidity</h3>
+                        <div class="big-value"><span id="big-hum">--</span> <small>%</small></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tab-chart" class="tab-content">
+                <h1>數據趨勢</h1>
+                <div class="card chart-container">
+                    <canvas id="sensorChart"></canvas>
+                </div>
+            </section>
+
+            <section id="tab-history" class="tab-content">
+                <h1>歷史資料 (近20筆)</h1>
+                <div class="card table-card">
+                    <table id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>時間</th>
+                                <th>溫度</th>
+                                <th>濕度</th>
+                                <th>緯度</th>
+                                <th>經度</th>
+                                <th>衛星</th>
+                                <th>按鈕</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </main>
     </div>
 
-    <!--gps-->
-    <div class="card">
-        <h2>定位</h2>
-        <div id="map"></div>
-    </div>
-
-    <!--溫濕度圖表-->
-    <div class="card">
-        <h2>溫濕度</h2>
-        <canvas id="sensorChart"></canvas>
-    </div>
-
-    <button onclick="logout()">登出</button>
-    
-    <script>
-    function logout() {
-    localStorage.clear();  // 清除登入狀態
-    window.location.href = "/login";  // 回登入頁
-    }   
-</script>
-    <!-- 載入 JS -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/static/js/script.js"></script>
 
+    <script>
+        // 登出功能
+        function logout() {
+            localStorage.clear();
+            window.location.href = "/login";
+        }
+
+        // 頁面切換邏輯
+        function switchTab(tabId, navElement) {
+            // 1. 隱藏所有內容頁
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // 2. 移除所有選單的 active 樣式
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // 3. 顯示目標頁面
+            document.getElementById(tabId).classList.add('active');
+            
+            // 4. 設定當前按鈕為 active
+            navElement.classList.add('active');
+
+            // ★ 重要修正：如果切換到含有地圖的頁面，需要重整地圖大小，否則地圖會破圖
+            if (tabId === 'tab-home' && typeof map !== 'undefined') {
+                setTimeout(() => { map.invalidateSize(); }, 200);
+            }
+        }
+    </script>
 </body>
 </html>

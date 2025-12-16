@@ -58,7 +58,7 @@ def upload():
 
     return jsonify(response_data)
 
-# ========== SSE 即時串流路由 (核心修改) ==========
+# ========== SSE 即時串流路由 ==========
 @app.route('/stream')
 def stream():
     def generate():

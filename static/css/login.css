@@ -6,13 +6,13 @@ body {
     align-items: center;
     font-family: "Microsoft JhengHei", sans-serif;
 
-    /* 這裡放你的 GIF */
+    /*GIF */
     background: url("/static/gif/background.gif") no-repeat center center fixed;
     background-size: cover;
     position: relative;
 }
 
-/* 半透明遮罩（讓輸入框更清楚） */
+/*半透明遮罩（讓輸入框更清楚)*/
 body::before {
     content: "";
     position: absolute;
@@ -78,5 +78,6 @@ body::before {
 }
 
 .note a {
-    color: #fff;
+    color: white;
 }
+

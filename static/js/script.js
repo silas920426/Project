@@ -22,6 +22,9 @@ let marker = null;
 function updateMap(lat, lng) {
     if (!lat || !lng) return;
 
+    // 簡單判斷有效座標 (排除 0,0)
+    if (Math.abs(lat) < 0.1 && Math.abs(lng) < 0.1) return;
+
     if (!marker) {
         marker = L.marker([lat, lng]).addTo(map);
     } else {
@@ -43,22 +46,25 @@ const sensorChart = new Chart(ctx, {
         datasets: [
             {
                 label: "溫度 (°C)",
-                borderColor: "red",
-                backgroundColor: "red",
+                borderColor: "#e67e22", // 改用比較顯眼的顏色
+                backgroundColor: "rgba(230, 126, 34, 0.1)",
                 data: [],
-                fill: false
+                fill: true,
+                tension: 0.4 // 讓線條圓滑一點
             },
             {
                 label: "濕度 (%)",
-                borderColor: "blue",
-                backgroundColor: "blue",
+                borderColor: "#3498db",
+                backgroundColor: "rgba(52, 152, 219, 0.1)",
                 data: [],
-                fill: false
+                fill: true,
+                tension: 0.4
             }
         ]
     },
     options: {
         responsive: true,
+        maintainAspectRatio: false, // 讓圖表適應容器高度
         scales: {
             y: {
                 beginAtZero: false
@@ -75,41 +81,47 @@ function updateDashboard(data) {
 
     const last = data[data.length - 1];
 
-    // 1. 更新即時數值面板
-    document.getElementById("temp").innerText = last.temp;
-    document.getElementById("hum").innerText = last.hum;
-    document.getElementById("sat").innerText = last.sat ?? "--";
-    document.getElementById("lat").innerText = last.lat ?? "--";
-    document.getElementById("lng").innerText = last.lng ?? "--";
-    document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
-    document.getElementById("btn").innerText = last.btn === 1 ? "按下" : "未按";
+    // 1. 更新即時數值面板 (首頁)
+    if(document.getElementById("temp")) document.getElementById("temp").innerText = last.temp;
+    if(document.getElementById("hum")) document.getElementById("hum").innerText = last.hum;
+    if(document.getElementById("sat")) document.getElementById("sat").innerText = last.sat ?? "--";
+    if(document.getElementById("lat")) document.getElementById("lat").innerText = last.lat ?? "--";
+    if(document.getElementById("lng")) document.getElementById("lng").innerText = last.lng ?? "--";
+    if(document.getElementById("timestamp")) document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
+    if(document.getElementById("btn")) document.getElementById("btn").innerText = last.btn === 1 ? "按下" : "未按";
 
-    // 2. 更新表格 (顯示最新的 20 筆，最新的在最上面)
+    // ★ 2. 更新溫濕度大面板 (新增的功能)
+    if(document.getElementById("big-temp")) document.getElementById("big-temp").innerText = last.temp;
+    if(document.getElementById("big-hum")) document.getElementById("big-hum").innerText = last.hum;
+
+
+    // 3. 更新表格 (顯示最新的 20 筆，最新的在最上面)
     const tbody = document.querySelector("#dataTable tbody");
-    tbody.innerHTML = "";
+    if(tbody) {
+        tbody.innerHTML = "";
+        // 複製陣列並反轉，取前 20 筆
+        const tableData = [...data].reverse().slice(0, 20);
+        
+        tableData.forEach(item => {
+            const row = document.createElement("tr");
+            let localTime = formatToTWTime(item.timestamp);
+            row.innerHTML = `
+                <td>${localTime}</td>
+                <td>${item.temp}</td>
+                <td>${item.hum}</td>
+                <td>${item.lat ?? "--"}</td>
+                <td>${item.lng ?? "--"}</td>
+                <td>${item.sat ?? "--"}</td>
+                <td>${item.btn === 1 ? "按下" : "-"}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
 
-    // 複製陣列並反轉，取前 20 筆
-    const tableData = [...data].reverse().slice(0, 20);
-    
-    tableData.forEach(item => {
-        const row = document.createElement("tr");
-        let localTime = formatToTWTime(item.timestamp);
-        row.innerHTML = `
-            <td>${localTime}</td>
-            <td>${item.temp}</td>
-            <td>${item.hum}</td>
-            <td>${item.lat ?? "--"}</td>
-            <td>${item.lng ?? "--"}</td>
-            <td>${item.sat ?? "--"}</td>
-            <td>${item.btn === 1 ? "按下" : "-"}</td>
-        `;
-        tbody.appendChild(row);
-    });
-
-    // 3. 更新地圖
+    // 4. 更新地圖
     updateMap(last.lat, last.lng);
     
-    // 4. 更新圖表 (使用全部回傳的 50 筆資料畫趨勢)
+    // 5. 更新圖表 (使用全部回傳的 50 筆資料畫趨勢)
     sensorChart.data.labels = [];
     sensorChart.data.datasets[0].data = [];
     sensorChart.data.datasets[1].data = [];
@@ -155,5 +167,5 @@ function startStream() {
 // 啟動 SSE 監聽
 startStream();
 
-// 頁面載入時也可先呼叫一次 API 取得初始畫面 (選用)
+// 頁面載入時也可先呼叫一次 API 取得初始畫面
 fetch(API_URL).then(res => res.json()).then(data => updateDashboard(data));
