@@ -92,7 +92,7 @@ def stream():
             except Exception as e:
                 print(f"Stream Error: {e}")
             finally:
-                # 務必關閉連線，避免長時間佔用導致 locked
+                # 關閉連線，避免長時間佔用導致 locked
                 conn.close()
 
             # 每秒檢查一次

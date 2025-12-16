@@ -6,8 +6,8 @@
 #include <HTTPClient.h>
 #include <WiFiMulti.h>
 
-// ★★★★★ 設定角色 ★★★★★
-#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 請註解掉此行
+//設定角色 
+#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 註解掉此行
 
 // --- LoRa 定義 ---
 #define LORA_SCK    5
@@ -26,29 +26,29 @@ LLCC68 radio = new Module(LORA_CS, LORA_DIO2, LORA_RESET, LORA_BUSY, SPI_LORA);
 #define I2C_SCL     15
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, I2C_SCL, I2C_SDA);
 
-// --- 硬體腳位 ---
+// --- 按鈕&蜂鳴器 ---
 #define BUTTON_PIN  25  
 #define BUZZER_PIN  21  
 
-// --- 全域變數 ---
-float temperature = 0.0f;
-float humidity    = 0.0f;
-double gpsLat = 0, gpsLng = 0;
-int gpsSat = 0;
+
+float temperature = 0.0f;      //溫度
+float humidity    = 0.0f;      //濕度
+double gpsLat = 0, gpsLng = 0; //經緯度
+int gpsSat = 0;                //衛星數
 
 //=================================================================
 //   Sensor 專用邏輯
 //=================================================================
 #ifdef INITIATING_NODE
 
-#define AM2120_PIN  32
-#define GPS_RX 23
-#define GPS_TX 12
+#define AM2120_PIN  32  // AM2120 資料腳位
+#define GPS_RX 23       // GPS 模組 RX 腳位，接 ESP32 發送端 TX
+#define GPS_TX 12       // GPS 模組 TX 腳位，接 ESP32 接收端 RX
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
 
-// 讀取 AM2120
-bool readAM2120(float &h, float &t) {
+
+bool readAM2120(float &h, float &t) {   // 讀取 AM2120
   uint8_t data[5] = {0};
   pinMode(AM2120_PIN, OUTPUT);
   digitalWrite(AM2120_PIN, LOW); delayMicroseconds(1800);
@@ -71,7 +71,7 @@ bool readAM2120(float &h, float &t) {
   return true;
 }
 
-void updateGPS() {
+void updateGPS() {  // 讀取 GPS 資料
   while (GPS_Serial.available()) gps.encode(GPS_Serial.read());
   if (gps.location.isValid()) {
     gpsLat = gps.location.lat();
@@ -80,7 +80,7 @@ void updateGPS() {
   }
 }
 
-void showMsg(const char* line1, const char* line2) {
+void showMsg(const char* line1, const char* line2) { // OLED 顯示訊息
   oled.clearBuffer();
   oled.setFont(u8g2_font_ncenB08_tr);
   oled.setCursor(0, 16); oled.print(line1);
@@ -162,7 +162,7 @@ bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int s
       json += "\"sat\":" + String(sat) + ",";
       json += "\"button\":" + String(btn);
   } else {
-      // 逾時沒收到資料，上傳 NULL 或 0，並標記 timeout
+      // 逾時沒收到資料，上傳 0，並標記 timeout
       json += "\"status\":\"timeout\","; 
       json += "\"temp\":0,";
       json += "\"hum\":0,";
@@ -222,7 +222,7 @@ void setup() {
 void loop() {
 
 #ifdef INITIATING_NODE
-  // [Sensor 端] 保持不變
+  // Sensor 端
   updateGPS();
 
   if (digitalRead(BUTTON_PIN) == LOW) {
@@ -243,14 +243,12 @@ void loop() {
   }
 
 #else
-  // ------------------------------------------------
-  // [Gateway 端] 包含逾時邏輯
-  // ------------------------------------------------
+  // Gateway 端
   static unsigned long lastPollTime = 0;
   static unsigned long pollStartTime = 0; // 記錄發出 REQ 的時間
   static bool isWaitingForReply = false;  // 標記是否正在等回覆
   
-  // 1. 定時任務：每 60 秒發送一次 REQ
+  // 每 60 秒發送一次 REQ
   if (millis() - lastPollTime > 60000) {
       lastPollTime = millis();
       
@@ -260,15 +258,15 @@ void loop() {
       radio.transmit("REQ"); 
       radio.startReceive();
       
-      // ★ 設定逾時監控旗標
+      // 設定逾時監控
       isWaitingForReply = true;
       pollStartTime = millis();
   }
 
-  // 2. 接收任務
+  // 接收任務
   String receivedStr;
   if (radio.receive(receivedStr) == RADIOLIB_ERR_NONE) {
-      // ★ 收到資料了，取消逾時等待
+      // 收到資料了，取消逾時等待
       isWaitingForReply = false;
       
       Serial.println("RX: " + receivedStr);
@@ -296,7 +294,7 @@ void loop() {
               oled.setCursor(0,32); oled.print("Uploading...");
               oled.sendBuffer();
 
-              // ★ 正常上傳 (isValid = true)
+              //正常上傳 (isValid = true)
               bool triggerBuzzer = sendToBackend(true, t, h, lat, lng, sat, btn);
 
               if (triggerBuzzer) {
@@ -321,7 +319,7 @@ void loop() {
       oled.setCursor(0,32); oled.print("Upld Empty...");
       oled.sendBuffer();
 
-      // ★ 逾時上傳 (isValid = false)
+      // 逾時上傳 (isValid = false)
       sendToBackend(false, 0, 0, 0, 0, 0, 0);
       
       oled.setCursor(0,48); oled.print("Empty Sent");
