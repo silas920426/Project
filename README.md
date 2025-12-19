@@ -1,3 +1,5 @@
+可在網頁中察看Sensor機台的位置以及溫濕度變化及線形圖
+
 
 EESP32-WROOM
 GPS  NEO-7M
