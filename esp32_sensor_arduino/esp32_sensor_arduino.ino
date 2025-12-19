@@ -6,8 +6,8 @@
 #include <HTTPClient.h>
 #include <WiFiMulti.h>
 
-//設定角色 
-#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 註解掉此行
+// ★★★ 設定角色 ★★★
+//#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 註解掉此行
 
 // --- LoRa 定義 ---
 #define LORA_SCK    5
@@ -30,25 +30,24 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, I2C_SCL, I2C_SD
 #define BUTTON_PIN  25  
 #define BUZZER_PIN  21  
 
-
-float temperature = 0.0f;      //溫度
-float humidity    = 0.0f;      //濕度
-double gpsLat = 0, gpsLng = 0; //經緯度
-int gpsSat = 0;                //衛星數
+float temperature = 0.0f;
+float humidity    = 0.0f;     
+double gpsLat = 0, gpsLng = 0; 
+int gpsSat = 0;
 
 //=================================================================
-//   Sensor 專用邏輯
+//   Sensor 專用邏輯 (Deep Sleep 版本)
 //=================================================================
 #ifdef INITIATING_NODE
 
-#define AM2120_PIN  32  // AM2120 資料腳位
-#define GPS_RX 23       // GPS 模組 RX 腳位，接 ESP32 發送端 TX
-#define GPS_TX 12       // GPS 模組 TX 腳位，接 ESP32 接收端 RX
+#define AM2120_PIN  32
+#define GPS_RX 23       
+#define GPS_TX 12      
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
 
-
-bool readAM2120(float &h, float &t) {   // 讀取 AM2120
+// AM2120 讀取函式
+bool readAM2120(float &h, float &t) {
   uint8_t data[5] = {0};
   pinMode(AM2120_PIN, OUTPUT);
   digitalWrite(AM2120_PIN, LOW); delayMicroseconds(1800);
@@ -71,16 +70,7 @@ bool readAM2120(float &h, float &t) {   // 讀取 AM2120
   return true;
 }
 
-void updateGPS() {  // 讀取 GPS 資料
-  while (GPS_Serial.available()) gps.encode(GPS_Serial.read());
-  if (gps.location.isValid()) {
-    gpsLat = gps.location.lat();
-    gpsLng = gps.location.lng();
-    gpsSat = gps.satellites.value();
-  }
-}
-
-void showMsg(const char* line1, const char* line2) { // OLED 顯示訊息
+void showMsg(const char* line1, const char* line2) { 
   oled.clearBuffer();
   oled.setFont(u8g2_font_ncenB08_tr);
   oled.setCursor(0, 16); oled.print(line1);
@@ -88,73 +78,121 @@ void showMsg(const char* line1, const char* line2) { // OLED 顯示訊息
   oled.sendBuffer();
 }
 
-// 統一發送函式：處理發送 + 等待 Buzzer 回應
-void sendSensorData(bool isUrgent) {
-    readAM2120(humidity, temperature);
-    int btnState = isUrgent ? 1 : 0; 
+void enterDeepSleep() {
+    Serial.println("Entering Deep Sleep...");
+    showMsg("Sleep Mode", "Press Btn to Wake");
+    delay(1000); // 讓使用者看到訊息
+    
+    // 關閉 OLED 省電
+    oled.setPowerSave(1);
+    // LoRa 進入睡眠
+    radio.sleep();
+    
+    // 設定喚醒源：GPIO 25 低電位喚醒 (按鈕按下連接 GND)
+    // 注意：按鈕需有硬體上拉電阻，或依賴內部上拉(Deep Sleep下部分GPIO維持狀態需配置)
+    // 這裡使用 ext0，只能監控 RTC GPIO
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); 
+    
+    esp_deep_sleep_start();
+}
+
+// 執行一次完整的偵測與傳輸流程
+void performTask() {
+    // 1. 嘗試讀取傳感器 (給予 2 秒的時間視窗讓 GPS buffer 進來，並讀取溫濕度)
+    showMsg("Waking Up...", "Detecting...");
+    unsigned long detectStart = millis();
+    bool am2120Success = false;
+    
+    while(millis() - detectStart < 2000) {
+        // 持續解析 GPS
+        while (GPS_Serial.available()) gps.encode(GPS_Serial.read());
+        // 只讀取一次溫濕度
+        if (!am2120Success) {
+            am2120Success = readAM2120(humidity, temperature);
+        }
+    }
+
+    if (gps.location.isValid()) {
+        gpsLat = gps.location.lat();
+        gpsLng = gps.location.lng();
+        gpsSat = gps.satellites.value();
+    }
+
+    // 2. 準備發送數據
+    // 因為是按鈕喚醒，btnState 設為 1
+    int btnState = 1; 
 
     String payload = String(temperature, 1) + "," + String(humidity, 1) + "," +
                      String(gpsLat, 6) + "," + String(gpsLng, 6) + "," +
                      String(gpsSat) + "," + String(btnState);
-
-    if (isUrgent) showMsg("BTN PRESSED!", "Sending...");
-    else showMsg("Polled", "Sending...");
     
+    showMsg("Sending Data...", payload.c_str());
     Serial.println("Sending: " + payload);
+    
+    // 發送
     radio.transmit(payload);
 
-    // 等待回應
+    // 3. 等待 Gateway 回覆 (Buzzer 指令)
+    // 給予 3 秒等待時間
+    showMsg("Wait Reply...", "Listening");
     unsigned long waitStart = millis();
     bool buzzTriggered = false;
-    radio.startReceive(); 
+    radio.startReceive(); // 切換為接收模式
 
     while(millis() - waitStart < 3000) {
         String reply;
         if (radio.receive(reply) == RADIOLIB_ERR_NONE) {
             if (reply == "CMD_BUZZ") {
                 buzzTriggered = true;
-                break;
+                break; // 收到指令就跳出
             }
         }
     }
 
+    // 4. 如果收到響鈴指令
     if (buzzTriggered) {
         showMsg("ALARM!", "BUZZER ON");
+        Serial.println("Buzzer Triggered!");
         for(int i=0; i<30; i++) { 
             digitalWrite(BUZZER_PIN, LOW); delay(50);
             digitalWrite(BUZZER_PIN, HIGH); delay(50);
         }
+    } else {
+        showMsg("Done", "No Command");
+        delay(500);
     }
-    showMsg("Sensor Listening...", "Waiting...");
-    radio.startReceive(); 
 }
 
 #else
 //=================================================================
-//   Gateway 專用邏輯
+//   Gateway 專用邏輯 (被動接收模式)
 //=================================================================
 WiFiMulti wifiMulti;
 String API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data";
 
+const char* JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3OTc2OTA4NDN9.Tqf9gQGjjr27vxddFEcE_qefZ264tm2OuV764Qa7Oj4"; //JWT token密鑰
+
 void initWiFi() {
   wifiMulti.addAP("Stephen_3F", "root1234");
   wifiMulti.addAP("enohpi61", "rootroot");
-  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Connecting WiFi..."); oled.sendBuffer();
+  oled.clearBuffer(); oled.setCursor(0,16);
+  oled.print("Connecting WiFi..."); oled.sendBuffer();
   while (wifiMulti.run() != WL_CONNECTED) delay(500);
   oled.setCursor(0,32); oled.print("WiFi OK"); oled.sendBuffer();
 }
 
-// 修改後的上傳函式：支援「正常資料」與「無資料(Timeout)」
 bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int sat, int btn) {
   if(wifiMulti.run() != WL_CONNECTED) return false;
 
   HTTPClient http;
   http.begin(API_URL);
   http.addHeader("Content-Type", "application/json");
+  String authHeader = "Bearer " + String(JWT_TOKEN);
+  http.addHeader("Authorization", authHeader);
 
   String json = "{";
   if (isValid) {
-      json += "\"status\":\"ok\","; 
+      json += "\"status\":\"ok\",";
       json += "\"temp\":" + String(t) + ",";
       json += "\"hum\":" + String(h) + ",";
       json += "\"lat\":" + String(lat, 6) + ",";
@@ -162,20 +200,19 @@ bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int s
       json += "\"sat\":" + String(sat) + ",";
       json += "\"button\":" + String(btn);
   } else {
-      // 逾時沒收到資料，上傳 0，並標記 timeout
-      json += "\"status\":\"timeout\","; 
-      json += "\"temp\":0,";
-      json += "\"hum\":0,";
-      json += "\"lat\":0,";
-      json += "\"lng\":0,";
-      json += "\"sat\":0,";
-      json += "\"button\":0";
+      json += "\"status\":\"timeout\",";
+      json += "\"temp\":0,\"hum\":0,\"lat\":0,\"lng\":0,\"sat\":0,\"button\":0";
   }
   json += "}";
 
   int httpCode = http.POST(json);
+
   String payload = http.getString();
   http.end();
+
+  if (httpCode == 401 || httpCode == 403) { // Debug訊息
+      Serial.println("Upload Failed: Invalid Token!");
+  }
 
   Serial.println("Server Response: " + payload);
   if (payload.indexOf("BUZZER_ON") > 0) return true; 
@@ -190,12 +227,13 @@ void setup() {
   Serial.begin(115200);
   oled.begin();
   oled.setFont(u8g2_font_ncenB08_tr);
-
+  
   SPI_LORA.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
   int state = radio.begin(923.875, 125.0, 7, 5, 0x12, 13, 10);
   if (state == RADIOLIB_ERR_NONE) {
     Serial.println(F("LoRa init success!"));
   } else {
+    Serial.println(F("LoRa init failed!"));
     while (true);
   }
 
@@ -203,16 +241,23 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, HIGH); 
 
-//sensor端
+// --- Sensor 端流程 ---
 #ifdef INITIATING_NODE
   GPS_Serial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-  showMsg("Sensor Hybrid", "Ready");
-  radio.startReceive(); 
+  
+  // 執行一次任務：偵測 -> 發送 -> 等回覆
+  performTask();
+  
+  // 任務結束，進入深層睡眠 (在這裡就會停止，不會進入 loop)
+  enterDeepSleep();
+
+// --- Gateway 端流程 ---
 #else
-//Gateway端
   initWiFi();
-  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Gateway Active"); oled.sendBuffer();
-  radio.startReceive(); 
+  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Gateway Ready"); 
+  oled.setCursor(0,32); oled.print("Listening..."); 
+  oled.sendBuffer();
+  radio.startReceive(); // Gateway 保持接收狀態
 #endif
 }
 
@@ -220,110 +265,61 @@ void setup() {
 //   LOOP
 //=================================================================
 void loop() {
-
 #ifdef INITIATING_NODE
-  // Sensor 端
-  updateGPS();
-
-  if (digitalRead(BUTTON_PIN) == LOW) {
-      delay(50);
-      if (digitalRead(BUTTON_PIN) == LOW) {
-          Serial.println("Button Pressed! Sending actively...");
-          sendSensorData(true); 
-          while(digitalRead(BUTTON_PIN) == LOW) { delay(10); }
-      }
-  }
-
-  String str;
-  if (radio.receive(str) == RADIOLIB_ERR_NONE) {
-      if (str == "REQ") {
-          Serial.println("Poll received! Sending...");
-          sendSensorData(false);
-      }
-  }
+  // Sensor 端使用 Deep Sleep，Loop 內不需要任何程式碼
+  // 程式實際上不會執行到這裡
 
 #else
-  // Gateway 端
-  static unsigned long lastPollTime = 0;
-  static unsigned long pollStartTime = 0; // 記錄發出 REQ 的時間
-  static bool isWaitingForReply = false;  // 標記是否正在等回覆
-  
-  // 每 60 秒發送一次 REQ
-  if (millis() - lastPollTime > 60000) {
-      lastPollTime = millis();
-      
-      Serial.println("Time to Poll, sending REQ...");
-      oled.setCursor(0,16); oled.print("Polling..."); oled.sendBuffer();
-
-      radio.transmit("REQ"); 
-      radio.startReceive();
-      
-      // 設定逾時監控
-      isWaitingForReply = true;
-      pollStartTime = millis();
-  }
-
-  // 接收任務
+  // --- Gateway 端邏輯 (只負責接收) ---
   String receivedStr;
+  
+  // 檢查是否收到 LoRa 資料
   if (radio.receive(receivedStr) == RADIOLIB_ERR_NONE) {
-      // 收到資料了，取消逾時等待
-      isWaitingForReply = false;
-      
       Serial.println("RX: " + receivedStr);
+      
       if (receivedStr.length() > 5) {
           float t, h;
           double lat, lng;
           int sat, btn;
           
+          // 簡易 CSV 解析
           int p1 = receivedStr.indexOf(',');
           int p2 = receivedStr.indexOf(',', p1+1);
           int p3 = receivedStr.indexOf(',', p2+1);
           int p4 = receivedStr.indexOf(',', p3+1);
           int p5 = receivedStr.indexOf(',', p4+1);
-
+          
           if (p1 > 0) {
               t = receivedStr.substring(0,p1).toFloat();
               h = receivedStr.substring(p1+1,p2).toFloat();
               lat = receivedStr.substring(p2+1,p3).toDouble();
               lng = receivedStr.substring(p3+1,p4).toDouble();
               sat = receivedStr.substring(p4+1).toInt();
-              btn = receivedStr.substring(p5+1).toInt();
+              btn = receivedStr.substring(p5+1).toInt(); // 這裡通常是 1
 
               oled.clearBuffer();
-              oled.setCursor(0,16); oled.printf("RX Data (Btn:%d)", btn);
+              oled.setCursor(0,16);
+              oled.printf("RX: Temp %.1f", t);
               oled.setCursor(0,32); oled.print("Uploading...");
               oled.sendBuffer();
 
-              //正常上傳 (isValid = true)
+              // 上傳至後端
               bool triggerBuzzer = sendToBackend(true, t, h, lat, lng, sat, btn);
-
+              
               if (triggerBuzzer) {
-                  Serial.println("Triggering Remote Buzzer...");
-                  delay(50); 
+                  Serial.println("Command: BUZZER_ON. Sending back to Sensor...");
+                  oled.setCursor(0,48); oled.print("CMD: BUZZ"); oled.sendBuffer();
+                  
+                  delay(50); // 稍作延遲確保切換穩定
                   radio.transmit("CMD_BUZZ");
-                  radio.startReceive(); 
+                  radio.startReceive(); // 發送完切回接收
               } else {
-                  oled.setCursor(0,48); oled.print("Upload OK"); 
-                  oled.sendBuffer();
+                  oled.setCursor(0,48); oled.print("Upload OK"); oled.sendBuffer();
+                  // 即使沒有 Buzzer 指令，也可以回傳一個 ACK 讓 Sensor 知道收到了 (選用)
+                  // 這裡保持安靜，讓 Sensor 3秒後自動睡覺即可
               }
           }
       }
-  }
-// 如果超過5秒沒收到資料則回傳0 0 0 0 0 0
-  if (isWaitingForReply && (millis() - pollStartTime > 5000)) {
-      isWaitingForReply = false; // 停止等待
-
-      Serial.println("Poll Timeout! No Data.");
-      oled.clearBuffer();
-      oled.setCursor(0,16); oled.print("Poll Timeout");
-      oled.setCursor(0,32); oled.print("Upld Empty...");
-      oled.sendBuffer();
-
-      // 逾時上傳 (isValid = false)
-      sendToBackend(false, 0, 0, 0, 0, 0, 0);
-      
-      oled.setCursor(0,48); oled.print("Empty Sent");
-      oled.sendBuffer();
   }
 #endif
 }

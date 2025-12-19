@@ -1,5 +1,16 @@
-// 後端 API (若有需要可修改 ngrok 網址)
+//API 
 const API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data"; 
+
+// JWT token
+const token = localStorage.getItem("authToken");
+
+if (!token) {
+    alert("請先登入！");
+    window.location.href = "/login";
+}
+
+// 1. 新增：用來記錄上一次的按鈕狀態 (避免一直重複跳視窗)
+let lastBtnState = -1; 
 
 // 時間格式化函式
 function formatToTWTime(utcStr) {
@@ -77,9 +88,17 @@ const sensorChart = new Chart(ctx, {
 // 🔄 UI 更新函式 (統一處理畫面刷新)
 //==================================================
 function updateDashboard(data) {
+
     if (!data || data.length === 0) return;
 
     const last = data[data.length - 1];
+
+    if (last.btn === 1) {
+        // 為了避免畫面還沒畫好就被 Alert 卡住，稍微延遲 0.1 秒
+        setTimeout(() => {
+            alert("⚠️ 警告：有人按下按鈕！");
+        }, 100);
+        }
 
     // 1. 更新即時數值面板 (首頁)
     if(document.getElementById("temp")) document.getElementById("temp").innerText = last.temp;
@@ -89,7 +108,6 @@ function updateDashboard(data) {
     if(document.getElementById("lng")) document.getElementById("lng").innerText = last.lng ?? "--";
     if(document.getElementById("timestamp")) document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
     if(document.getElementById("btn")) document.getElementById("btn").innerText = last.btn === 1 ? "按下" : "未按";
-
     // ★ 2. 更新溫濕度大面板 (新增的功能)
     if(document.getElementById("big-temp")) document.getElementById("big-temp").innerText = last.temp;
     if(document.getElementById("big-hum")) document.getElementById("big-hum").innerText = last.hum;
@@ -142,7 +160,7 @@ function updateDashboard(data) {
 //==================================================
 function startStream() {
     console.log("嘗試建立 SSE 連線...");
-    const evtSource = new EventSource("/stream");
+    const evtSource = new EventSource(`/stream?token=${token}`);
 
     // 當收到後端推送的資料時
     evtSource.onmessage = function(event) {
@@ -167,5 +185,21 @@ function startStream() {
 // 啟動 SSE 監聽
 startStream();
 
-// 頁面載入時也可先呼叫一次 API 取得初始畫面
-fetch(API_URL).then(res => res.json()).then(data => updateDashboard(data));
+// ========== 頁面載入時的第一次資料抓取  ==========
+fetch(API_URL, {
+    method: "GET",
+    headers: {
+        "Authorization": "Bearer " + token, //  加入 Header
+        "Content-Type": "application/json"
+    }
+})
+.then(res => {
+    if (res.status === 401 || res.status === 403) {
+        alert("登入逾時，請重新登入");
+        window.location.href = "/login";
+        return [];
+    }
+    return res.json();
+})
+.then(data => updateDashboard(data))
+.catch(err => console.error("Fetch Error:", err));

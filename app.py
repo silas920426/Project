@@ -3,7 +3,8 @@ from flask_cors import CORS
 import sqlite3
 import time
 import json
-
+import jwt          
+import datetime     
 print(">>> Flask 檔案載入成功")
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -11,21 +12,62 @@ CORS(app)
 
 DB_NAME = "sensor.db"
 
+#設定JWT token密鑰
+SECRET_KEY = "my_super_secret_iot_key_2025"
+
 # ========== 1. 建立資料庫連線 ==========
 def get_db():
     conn = sqlite3.connect(DB_NAME, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
+# ========== 產生 JWT Token 路由 ==========
+@app.route("/api/generate-token")
+def generate_token():
+    # 設定過期時間為 1 年 (IoT 裝置通常很少更換 Token)
+    payload = {
+        "device": "gateway_001",
+        "role": "uploader",
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=365)
+    }
+    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    return jsonify({"token": token})
+
+
 # ========== 上傳資料 API ==========
 @app.route("/api/sensor-data", methods=["POST"])
 def upload():
+    # --- JWT 驗證區塊 ---
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header:
+        return jsonify({"status": "error", "message": "缺少 Authorization Header"}), 401
+    
+    try:
+        # 格式通常為 "Bearer <token>"
+        token_type, token = auth_header.split(" ")
+        if token_type != "Bearer":
+            raise ValueError("Token type must be Bearer")
+            
+        # 解碼並驗證
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        # 如果程式執行到這裡，代表驗證成功
+        print(f">>> 驗證成功，裝置來源: {decoded.get('device')}")
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({"status": "error", "message": "Token 已過期"}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({"status": "error", "message": "Token 無效"}), 403
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 401
+    # --- [新增] JWT 驗證區塊 結束 ---
+
     data = request.json
     if not data:
         return jsonify({"status": "error", "message": "No data received"}), 400
 
     btn_status = data.get("button")
-
+    
     conn = get_db()
     try:
         c = conn.cursor()
@@ -58,23 +100,36 @@ def upload():
 
     return jsonify(response_data)
 
-# ========== SSE 即時串流路由 ==========
+# ========== [修改] SSE 即時串流路由 (加入 Token 驗證) ==========
 @app.route('/stream')
 def stream():
+    # 1. 從 URL 參數取得 Token
+    token = request.args.get('token')
+    
+    if not token:
+        print("Stream 拒絕連線: 缺少 Token")
+        return jsonify({"message": "Missing Token"}), 401
+
+    # 2. 驗證 Token
+    try:
+        jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except Exception as e:
+        print(f"Stream 拒絕連線: Token 無效 - {e}")
+        return jsonify({"message": "Invalid Token"}), 403
+
+    # 3. 定義產生器
     def generate():
         last_sent_id = -1
-        
         while True:
-            conn = get_db()
+            # 必須在此建立新的連線，不能共用外部的 conn
+            conn = get_db() 
             try:
                 c = conn.cursor()
-                # 1. 檢查目前資料庫最新的 ID
                 row = c.execute("SELECT MAX(id) as max_id FROM sensor_data").fetchone()
                 current_max_id = row["max_id"] if row["max_id"] is not None else 0
 
-                # 2. 如果發現新資料 (ID 變大)
                 if current_max_id > last_sent_id:
-                    # 取出最新的 50 筆資料 (先取最新的，再轉回正序)
+                    # 取出最新的 50 筆
                     sql = """
                     SELECT * FROM (
                         SELECT * FROM sensor_data ORDER BY id DESC LIMIT 50
@@ -83,16 +138,14 @@ def stream():
                     rows = c.execute(sql).fetchall()
                     data_list = [dict(r) for r in rows]
 
-                    # 3. 轉成 SSE 格式推送
+                    # 轉成 SSE 格式推送
                     json_data = json.dumps(data_list)
                     yield f"data: {json_data}\n\n"
                     
-                    # 更新指標
                     last_sent_id = current_max_id
             except Exception as e:
                 print(f"Stream Error: {e}")
             finally:
-                # 關閉連線，避免長時間佔用導致 locked
                 conn.close()
 
             # 每秒檢查一次
@@ -100,23 +153,49 @@ def stream():
 
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-# ========== 讀取資料 API (保留給第一次載入或備用) ==========
+# ========== 讀取資料 API (移除所有 Token 檢查) ==========
 @app.route("/api/sensor-data", methods=["GET"])
 def get_data():
+    # 這裡原本有檢查 Authorization 的程式碼，全部刪掉！
+    # 直接開始連線資料庫
     conn = get_db()
     try:
         c = conn.cursor()
-        # 限制只回傳最後 50 筆，避免資料量過大
-        sql = """
-        SELECT * FROM (
-            SELECT * FROM sensor_data ORDER BY id DESC LIMIT 50
-        ) ORDER BY id ASC
-        """
+        # 抓取最後 50 筆
+        sql = "SELECT * FROM (SELECT * FROM sensor_data ORDER BY id DESC LIMIT 50) ORDER BY id ASC"
         rows = c.execute(sql).fetchall()
         return jsonify([dict(row) for row in rows])
     except Exception as e:
         print(f"讀取失敗: {e}")
         return jsonify([]), 500
+    finally:
+        conn.close()
+
+# ========== [修改] 登入 API (簽發 Token) ==========
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        user = c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password)).fetchone()
+        
+        if user:
+            # [新增] 產生 JWT Token (效期設定 365 天)
+            payload = {
+                "user": username,
+                "role": "admin", # 之後可以做權限管理
+                "exp": datetime.datetime.utcnow() + datetime.timedelta(days=365)
+            }
+            token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+            
+            # 回傳 Token 給前端
+            return jsonify({"message": "登入成功", "token": token}),200
+        else:
+            return jsonify({"message": "帳號或密碼錯誤"}), 401
     finally:
         conn.close()
 
@@ -143,27 +222,6 @@ def register():
         return jsonify({"message": "註冊成功"}), 200
     except Exception as e:
         return jsonify({"message": "註冊失敗"}), 500
-    finally:
-        conn.close()
-
-@app.route("/auth/login", methods=["POST"])
-def login():
-    data = request.json
-    username = data.get("username")
-    password = data.get("password")
-
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        user = c.execute(
-            "SELECT * FROM users WHERE username=? AND password=?",
-            (username, password)
-        ).fetchone()
-        
-        if user:
-            return jsonify({"message": "登入成功"}), 200
-        else:
-            return jsonify({"message": "帳號或密碼錯誤"}), 401
     finally:
         conn.close()
 

@@ -15,11 +15,15 @@ document.getElementById("loginBtn").addEventListener("click", async () => {
     });
 
     const data = await res.json();
-    alert(data.message);
 
     if (res.ok) {
         localStorage.setItem("loggedIn", "true");
         localStorage.setItem("username", username);
+        localStorage.setItem("authToken", data.token); // 儲存 token
+
+        alert("登入成功 ! ");
         window.location.href = "/index";
-    }
+    }else {
+            alert(data.message);
+        }
 });
