@@ -7,7 +7,7 @@
 #include <WiFiMulti.h>
 
 // ★★★ 設定角色 ★★★
-//#define INITIATING_NODE // 如果是 Sensor 端保留此行；如果是 Gateway 註解掉此行
+#define INITIATING_NODE // 如果是 Sensor 端請保留此行 (取消註解)；如果是 Gateway 端請註解掉此行
 
 // --- LoRa 定義 ---
 #define LORA_SCK    5
@@ -35,6 +35,15 @@ float humidity    = 0.0f;
 double gpsLat = 0, gpsLng = 0; 
 int gpsSat = 0;
 
+// [新增] 取得 ChipID 的小工具函式 (Sensor 和 Gateway 都可以用)
+String getChipId() {
+  uint64_t chipid = ESP.getEfuseMac(); // 讀取 eFuse 中的唯一識別碼 (其實就是 MAC)
+  char chipIdBuf[13];
+  // 格式化成 12 位數的 Hex 字串 (例如: A1B2C3D4E5F6)
+  snprintf(chipIdBuf, 13, "%04X%08X", (uint16_t)(chipid >> 32), (uint32_t)chipid);
+  return String(chipIdBuf);
+}
+
 //=================================================================
 //   Sensor 專用邏輯 (Deep Sleep 版本)
 //=================================================================
@@ -45,6 +54,8 @@ int gpsSat = 0;
 #define GPS_TX 12      
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
+
+String myChipId = ""; // 用來存這台 Sensor 的 ID
 
 // AM2120 讀取函式
 bool readAM2120(float &h, float &t) {
@@ -81,32 +92,22 @@ void showMsg(const char* line1, const char* line2) {
 void enterDeepSleep() {
     Serial.println("Entering Deep Sleep...");
     showMsg("Sleep Mode", "Press Btn to Wake");
-    delay(1000); // 讓使用者看到訊息
+    delay(1000); 
     
-    // 關閉 OLED 省電
     oled.setPowerSave(1);
-    // LoRa 進入睡眠
     radio.sleep();
     
-    // 設定喚醒源：GPIO 25 低電位喚醒 (按鈕按下連接 GND)
-    // 注意：按鈕需有硬體上拉電阻，或依賴內部上拉(Deep Sleep下部分GPIO維持狀態需配置)
-    // 這裡使用 ext0，只能監控 RTC GPIO
     esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, 0); 
-    
     esp_deep_sleep_start();
 }
 
-// 執行一次完整的偵測與傳輸流程
 void performTask() {
-    // 1. 嘗試讀取傳感器 (給予 2 秒的時間視窗讓 GPS buffer 進來，並讀取溫濕度)
     showMsg("Waking Up...", "Detecting...");
     unsigned long detectStart = millis();
     bool am2120Success = false;
     
     while(millis() - detectStart < 2000) {
-        // 持續解析 GPS
         while (GPS_Serial.available()) gps.encode(GPS_Serial.read());
-        // 只讀取一次溫濕度
         if (!am2120Success) {
             am2120Success = readAM2120(humidity, temperature);
         }
@@ -118,38 +119,34 @@ void performTask() {
         gpsSat = gps.satellites.value();
     }
 
-    // 2. 準備發送數據
-    // 因為是按鈕喚醒，btnState 設為 1
     int btnState = 1; 
 
+    // [修改] 組合 Payload，加入 ChipID 在最後
     String payload = String(temperature, 1) + "," + String(humidity, 1) + "," +
                      String(gpsLat, 6) + "," + String(gpsLng, 6) + "," +
-                     String(gpsSat) + "," + String(btnState);
+                     String(gpsSat) + "," + String(btnState) + "," + 
+                     myChipId; // <--- 使用 ChipID
     
     showMsg("Sending Data...", payload.c_str());
     Serial.println("Sending: " + payload);
     
-    // 發送
     radio.transmit(payload);
 
-    // 3. 等待 Gateway 回覆 (Buzzer 指令)
-    // 給予 3 秒等待時間
     showMsg("Wait Reply...", "Listening");
     unsigned long waitStart = millis();
     bool buzzTriggered = false;
-    radio.startReceive(); // 切換為接收模式
+    radio.startReceive(); 
 
     while(millis() - waitStart < 3000) {
         String reply;
         if (radio.receive(reply) == RADIOLIB_ERR_NONE) {
             if (reply == "CMD_BUZZ") {
                 buzzTriggered = true;
-                break; // 收到指令就跳出
+                break; 
             }
         }
     }
 
-    // 4. 如果收到響鈴指令
     if (buzzTriggered) {
         showMsg("ALARM!", "BUZZER ON");
         Serial.println("Buzzer Triggered!");
@@ -170,18 +167,30 @@ void performTask() {
 WiFiMulti wifiMulti;
 String API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data";
 
-const char* JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3OTc2OTA4NDN9.Tqf9gQGjjr27vxddFEcE_qefZ264tm2OuV764Qa7Oj4"; //JWT token密鑰
+const char* JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3OTc2OTA4NDN9.Tqf9gQGjjr27vxddFEcE_qefZ264tm2OuV764Qa7Oj4"; 
 
 void initWiFi() {
+  WiFi.mode(WIFI_STA);
+  Serial.print("Gateway ChipID: ");
+  Serial.println(getChipId()); // 顯示 Gateway 自己的 ID
+
   wifiMulti.addAP("Stephen_3F", "root1234");
   wifiMulti.addAP("enohpi61", "rootroot");
+  
   oled.clearBuffer(); oled.setCursor(0,16);
   oled.print("Connecting WiFi..."); oled.sendBuffer();
+  
   while (wifiMulti.run() != WL_CONNECTED) delay(500);
-  oled.setCursor(0,32); oled.print("WiFi OK"); oled.sendBuffer();
+  
+  oled.clearBuffer();
+  oled.setCursor(0,16); oled.print("WiFi OK");
+  oled.setCursor(0,32); oled.print("IP: ");
+  oled.setCursor(0,48); oled.print(WiFi.localIP()); 
+  oled.sendBuffer();
 }
 
-bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int sat, int btn) {
+// [修改] 參數名稱改為 sensorChipId 比較明確
+bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int sat, int btn, String sensorChipId) {
   if(wifiMulti.run() != WL_CONNECTED) return false;
 
   HTTPClient http;
@@ -191,6 +200,9 @@ bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int s
   http.addHeader("Authorization", authHeader);
 
   String json = "{";
+  // [修改] 使用 Sensor 傳過來的 ChipID
+  json += "\"machine_id\":\"" + sensorChipId + "\","; 
+
   if (isValid) {
       json += "\"status\":\"ok\",";
       json += "\"temp\":" + String(t) + ",";
@@ -210,7 +222,7 @@ bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int s
   String payload = http.getString();
   http.end();
 
-  if (httpCode == 401 || httpCode == 403) { // Debug訊息
+  if (httpCode == 401 || httpCode == 403) {
       Serial.println("Upload Failed: Invalid Token!");
   }
 
@@ -243,21 +255,33 @@ void setup() {
 
 // --- Sensor 端流程 ---
 #ifdef INITIATING_NODE
+  // [修改] 這裡改用 ChipID，不再依賴 WiFi.macAddress()
+  myChipId = getChipId(); 
+  Serial.print("Sensor ChipID: ");
+  Serial.println(myChipId);
+  
+  // 顯示在螢幕上方便註冊
+  oled.clearBuffer();
+  oled.setCursor(0,16); oled.print("Sensor Ready");
+  oled.setCursor(0,32); oled.print("ID:");
+  oled.setCursor(0,48); oled.print(myChipId);
+  oled.sendBuffer();
+  delay(3000); // 暫停一下讓使用者抄寫 ID
+
   GPS_Serial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-  
-  // 執行一次任務：偵測 -> 發送 -> 等回覆
   performTask();
-  
-  // 任務結束，進入深層睡眠 (在這裡就會停止，不會進入 loop)
   enterDeepSleep();
 
 // --- Gateway 端流程 ---
 #else
-  initWiFi();
-  oled.clearBuffer(); oled.setCursor(0,16); oled.print("Gateway Ready"); 
+  initWiFi(); 
+  
+  oled.clearBuffer(); 
+  oled.setCursor(0,16); oled.print("Gateway Ready"); 
   oled.setCursor(0,32); oled.print("Listening..."); 
   oled.sendBuffer();
-  radio.startReceive(); // Gateway 保持接收狀態
+  
+  radio.startReceive(); 
 #endif
 }
 
@@ -266,57 +290,62 @@ void setup() {
 //=================================================================
 void loop() {
 #ifdef INITIATING_NODE
-  // Sensor 端使用 Deep Sleep，Loop 內不需要任何程式碼
-  // 程式實際上不會執行到這裡
+  // Sensor 端使用 Deep Sleep
 
 #else
-  // --- Gateway 端邏輯 (只負責接收) ---
+  // --- Gateway 端邏輯 ---
   String receivedStr;
   
-  // 檢查是否收到 LoRa 資料
   if (radio.receive(receivedStr) == RADIOLIB_ERR_NONE) {
       Serial.println("RX: " + receivedStr);
       
-      if (receivedStr.length() > 5) {
+      // 基本長度檢查
+      if (receivedStr.length() > 10) {
           float t, h;
           double lat, lng;
           int sat, btn;
+          String r_chipId; // [修改] 接收到的 sensor ChipID
           
-          // 簡易 CSV 解析
+          // CSV 解析 (格式: temp,hum,lat,lng,sat,btn,ChipID)
           int p1 = receivedStr.indexOf(',');
           int p2 = receivedStr.indexOf(',', p1+1);
           int p3 = receivedStr.indexOf(',', p2+1);
           int p4 = receivedStr.indexOf(',', p3+1);
           int p5 = receivedStr.indexOf(',', p4+1);
+          int p6 = receivedStr.indexOf(',', p5+1); 
           
-          if (p1 > 0) {
+          if (p1 > 0 && p6 > 0) {
               t = receivedStr.substring(0,p1).toFloat();
               h = receivedStr.substring(p1+1,p2).toFloat();
               lat = receivedStr.substring(p2+1,p3).toDouble();
               lng = receivedStr.substring(p3+1,p4).toDouble();
               sat = receivedStr.substring(p4+1).toInt();
-              btn = receivedStr.substring(p5+1).toInt(); // 這裡通常是 1
+              btn = receivedStr.substring(p5+1, p6).toInt(); 
+              r_chipId = receivedStr.substring(p6+1);       
+
+              r_chipId.trim(); // 去除空白
 
               oled.clearBuffer();
               oled.setCursor(0,16);
-              oled.printf("RX: Temp %.1f", t);
-              oled.setCursor(0,32); oled.print("Uploading...");
+              oled.printf("RX Temp: %.1f", t);
+              oled.setCursor(0,32);
+              oled.print("ID: " + r_chipId); 
+              oled.setCursor(0,48);
+              oled.print("Uploading...");
               oled.sendBuffer();
 
-              // 上傳至後端
-              bool triggerBuzzer = sendToBackend(true, t, h, lat, lng, sat, btn);
+              // 上傳至後端 (傳入解析出來的 Sensor ChipID)
+              bool triggerBuzzer = sendToBackend(true, t, h, lat, lng, sat, btn, r_chipId);
               
               if (triggerBuzzer) {
-                  Serial.println("Command: BUZZER_ON. Sending back to Sensor...");
+                  Serial.println("Command: BUZZER_ON. Sending back...");
                   oled.setCursor(0,48); oled.print("CMD: BUZZ"); oled.sendBuffer();
                   
-                  delay(50); // 稍作延遲確保切換穩定
+                  delay(50);
                   radio.transmit("CMD_BUZZ");
-                  radio.startReceive(); // 發送完切回接收
+                  radio.startReceive(); 
               } else {
                   oled.setCursor(0,48); oled.print("Upload OK"); oled.sendBuffer();
-                  // 即使沒有 Buzzer 指令，也可以回傳一個 ACK 讓 Sensor 知道收到了 (選用)
-                  // 這裡保持安靜，讓 Sensor 3秒後自動睡覺即可
               }
           }
       }

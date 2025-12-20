@@ -1,5 +1,5 @@
-//API 
-const API_URL = "https://monarchistic-organizationally-magdalene.ngrok-free.dev/api/sensor-data"; 
+// API 
+const API_URL = "/api/sensor-data"; // 建議用相對路徑，避免 ngrok 網址變動問題
 
 // JWT token
 const token = localStorage.getItem("authToken");
@@ -9,9 +9,6 @@ if (!token) {
     window.location.href = "/login";
 }
 
-// 1. 新增：用來記錄上一次的按鈕狀態 (避免一直重複跳視窗)
-let lastBtnState = -1; 
-
 // 時間格式化函式
 function formatToTWTime(utcStr) {
     if (!utcStr) return "--";
@@ -20,9 +17,7 @@ function formatToTWTime(utcStr) {
     return date.toLocaleString('zh-TW', { hour12: false });
 }
 
-//==================================================
-//  🌍 Leaflet Map 初始化
-//==================================================
+// 🌍 Map 初始化
 let map = L.map('map').setView([23.5, 120.5], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
@@ -30,6 +25,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 let marker = null;
 
+// 地圖更新
 function updateMap(lat, lng) {
     if (!lat || !lng) return;
 
@@ -44,10 +40,7 @@ function updateMap(lat, lng) {
     map.setView([lat, lng], 13);
 }
 
-
-//==================================================
 // 📊 Chart.js 初始化
-//==================================================
 const ctx = document.getElementById("sensorChart").getContext("2d");
 
 const sensorChart = new Chart(ctx, {
@@ -57,11 +50,11 @@ const sensorChart = new Chart(ctx, {
         datasets: [
             {
                 label: "溫度 (°C)",
-                borderColor: "#e67e22", // 改用比較顯眼的顏色
+                borderColor: "#e67e22",
                 backgroundColor: "rgba(230, 126, 34, 0.1)",
                 data: [],
                 fill: true,
-                tension: 0.4 // 讓線條圓滑一點
+                tension: 0.4
             },
             {
                 label: "濕度 (%)",
@@ -75,7 +68,7 @@ const sensorChart = new Chart(ctx, {
     },
     options: {
         responsive: true,
-        maintainAspectRatio: false, // 讓圖表適應容器高度
+        maintainAspectRatio: false,
         scales: {
             y: {
                 beginAtZero: false
@@ -84,62 +77,79 @@ const sensorChart = new Chart(ctx, {
     }
 });
 
-//==================================================
-// 🔄 UI 更新函式 (統一處理畫面刷新)
-//==================================================
+// 🔄 頁面更新函式 (統一處理畫面刷新)
 function updateDashboard(data) {
 
     if (!data || data.length === 0) return;
 
     const last = data[data.length - 1];
 
-    if (last.btn === 1) {
-        // 為了避免畫面還沒畫好就被 Alert 卡住，稍微延遲 0.1 秒
-        setTimeout(() => {
-            alert("⚠️ 警告：有人按下按鈕！");
-        }, 100);
-        }
+    //計算顯示名稱 (優先顯示使用者名稱，沒有則顯示機台ID)
+    const displayName = last.username ? `${last.username} (${last.machine_id})` : (last.machine_id || "未知裝置");
 
-    // 1. 更新即時數值面板 (首頁)
+    //警報邏輯
+    const lastAlertedTime = localStorage.getItem("lastAlertTimestamp");
+    
+    if (last.btn === 1 && last.timestamp !== lastAlertedTime) {
+        // 更新 localStorage，防止重複跳出
+        localStorage.setItem("lastAlertTimestamp", last.timestamp);
+
+        setTimeout(() => {
+            // 顯示詳細的使用者資訊
+            alert(`⚠️ 緊急通知 ⚠️\n\n使用者：${displayName}\n已按下求救按鈕！`);
+        }, 100);
+    }
+
+    // 3. 更新即時數值面板 
     if(document.getElementById("temp")) document.getElementById("temp").innerText = last.temp;
     if(document.getElementById("hum")) document.getElementById("hum").innerText = last.hum;
     if(document.getElementById("sat")) document.getElementById("sat").innerText = last.sat ?? "--";
     if(document.getElementById("lat")) document.getElementById("lat").innerText = last.lat ?? "--";
     if(document.getElementById("lng")) document.getElementById("lng").innerText = last.lng ?? "--";
     if(document.getElementById("timestamp")) document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
-    if(document.getElementById("btn")) document.getElementById("btn").innerText = last.btn === 1 ? "按下" : "未按";
-    // ★ 2. 更新溫濕度大面板 (新增的功能)
+    
+    // [修改] 按鈕狀態顯示使用者名稱
+    if(document.getElementById("btn")) {
+        const statusText = last.btn === 1 ? "按下" : "未按";
+        document.getElementById("btn").innerText = last.btn === 1 ? `${statusText} - ${displayName}` : statusText;
+        document.getElementById("btn").style.color = last.btn === 1 ? "red" : "black";
+    }
+
+    // 更新溫濕度大面板 
     if(document.getElementById("big-temp")) document.getElementById("big-temp").innerText = last.temp;
     if(document.getElementById("big-hum")) document.getElementById("big-hum").innerText = last.hum;
 
 
-    // 3. 更新表格 (顯示最新的 20 筆，最新的在最上面)
+    // 4. 更新表格 (顯示最新的 20 筆)
     const tbody = document.querySelector("#dataTable tbody");
     if(tbody) {
         tbody.innerHTML = "";
-        // 複製陣列並反轉，取前 20 筆
         const tableData = [...data].reverse().slice(0, 20);
         
         tableData.forEach(item => {
             const row = document.createElement("tr");
             let localTime = formatToTWTime(item.timestamp);
+            
+            // [新增] 表格顯示使用者欄位
+            let userDisplay = item.username || item.machine_id || "--";
+
             row.innerHTML = `
                 <td>${localTime}</td>
-                <td>${item.temp}</td>
+                <td>${userDisplay}</td> <td>${item.temp}</td>
                 <td>${item.hum}</td>
                 <td>${item.lat ?? "--"}</td>
                 <td>${item.lng ?? "--"}</td>
                 <td>${item.sat ?? "--"}</td>
-                <td>${item.btn === 1 ? "按下" : "-"}</td>
+                <td style="color:${item.btn===1?'red':'black'}">${item.btn === 1 ? "按下" : "-"}</td>
             `;
             tbody.appendChild(row);
         });
     }
 
-    // 4. 更新地圖
+    // 5. 更新地圖
     updateMap(last.lat, last.lng);
     
-    // 5. 更新圖表 (使用全部回傳的 50 筆資料畫趨勢)
+    // 6. 更新圖表
     sensorChart.data.labels = [];
     sensorChart.data.datasets[0].data = [];
     sensorChart.data.datasets[1].data = [];
@@ -155,14 +165,11 @@ function updateDashboard(data) {
     sensorChart.update();
 }
 
-//==================================================
-// 📡 SSE 連線設定 (取代 setInterval)
-//==================================================
+// 📡 SSE 連線設定
 function startStream() {
     console.log("嘗試建立 SSE 連線...");
     const evtSource = new EventSource(`/stream?token=${token}`);
 
-    // 當收到後端推送的資料時
     evtSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
@@ -173,23 +180,52 @@ function startStream() {
         }
     };
 
-    // 連線錯誤處理
     evtSource.onerror = function(err) {
         console.error("SSE 連線中斷或錯誤:", err);
         evtSource.close();
-        // 5秒後嘗試重連
         setTimeout(startStream, 5000);
     };
 }
 
-// 啟動 SSE 監聽
 startStream();
 
-// ========== 頁面載入時的第一次資料抓取  ==========
+// 機台註冊
+async function registerMachine() {
+    const machineId = document.getElementById("reg-machine-id").value.trim();
+    const username = document.getElementById("reg-username").value.trim();
+
+    if (!machineId || !username) {
+        alert("請輸入完整資訊");
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/register-machine", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+                // 不需要 Authorization header
+            },
+            body: JSON.stringify({ machine_id: machineId, username: username })
+        });
+        
+        const data = await res.json();
+        alert(data.message);
+        if (res.ok) {
+            document.getElementById("reg-machine-id").value = "";
+            document.getElementById("reg-username").value = "";
+        }
+    } catch (err) {
+        console.error(err);
+        alert("註冊失敗");
+    }
+}
+
+// ========== 頁面載入時的第一次資料抓取 ==========
 fetch(API_URL, {
     method: "GET",
     headers: {
-        "Authorization": "Bearer " + token, //  加入 Header
+        "Authorization": "Bearer " + token,
         "Content-Type": "application/json"
     }
 })
