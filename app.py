@@ -207,7 +207,57 @@ def register_machine():
         return jsonify({"message": str(e)}), 500
     finally:
         conn.close()
+# ========== 取得機台清單==========
+@app.route("/api/machines", methods=["GET"])
+def list_machines():
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        rows = c.execute("""
+            SELECT machine_id, username
+            FROM machines
+            ORDER BY machine_id ASC
+        """).fetchall()
+        return jsonify([dict(r) for r in rows])
+    finally:
+        conn.close()
 
+# ========== 更新機台資料 ==========
+@app.route("/api/update-machine", methods=["PUT"])
+def update_machine():
+    data = request.json
+    old_id = data.get("old_machine_id")
+    new_id = data.get("new_machine_id")
+    username = data.get("username")
+
+    if not old_id or not new_id or not username:
+        return jsonify({"message": "資料不完整"}), 400
+
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM machines WHERE machine_id=?", (old_id,))
+        c.execute("INSERT INTO machines (machine_id, username) VALUES (?, ?)",
+                  (new_id, username))
+        conn.commit()
+        return jsonify({"message": "更新成功"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"message": str(e)}), 500
+    finally:
+        conn.close()
+
+# ========== 刪除機台 ==========
+@app.route("/api/delete-machine/<machine_id>", methods=["DELETE"])
+def delete_machine(machine_id):
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM machines WHERE machine_id=?", (machine_id,))
+        conn.commit()
+        return jsonify({"message": f"{machine_id} 已刪除"})
+    finally:
+        conn.close()
 
 # ========== 使用者註冊 ==========
 @app.route("/auth/register", methods=["POST"])

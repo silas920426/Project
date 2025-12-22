@@ -135,8 +135,18 @@
                         確認綁定
                     </button>
                 </div>
+                <h3>已註冊機台清單</h3>
+                <table id="machineTable">
+                    <thead>
+                        <tr>
+                            <th>Machine ID</th>
+                            <th>使用者</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </section>
-
         </main>
     </div>
 
@@ -169,9 +179,14 @@
             // 4. 設定當前按鈕為 active
             navElement.classList.add('active');
 
-            // ★ 重要修正：如果切換到含有地圖的頁面，需要重整地圖大小，否則地圖會破圖
+            // 5. 如果切換到含有地圖的頁面，需要重整地圖大小，否則地圖會破圖
             if (tabId === 'tab-home' && typeof map !== 'undefined') {
                 setTimeout(() => { map.invalidateSize(); }, 200);
+            }
+
+            // 6. 如果切換到機台註冊頁面，載入機台清單
+            if (tabId === 'tab-register' && typeof loadMachines === 'function') {
+                loadMachines();
             }
         }
     </script>

@@ -37,10 +37,9 @@ int gpsSat = 0;
 
 // [新增] 取得 ChipID 的小工具函式 (Sensor 和 Gateway 都可以用)
 String getChipId() {
-  uint64_t chipid = ESP.getEfuseMac(); // 讀取 eFuse 中的唯一識別碼 (其實就是 MAC)
-  char chipIdBuf[13];
-  // 格式化成 12 位數的 Hex 字串 (例如: A1B2C3D4E5F6)
-  snprintf(chipIdBuf, 13, "%04X%08X", (uint16_t)(chipid >> 32), (uint32_t)chipid);
+  uint64_t chipid = ESP.getEfuseMac(); 
+  char chipIdBuf[24]; 
+  snprintf(chipIdBuf, sizeof(chipIdBuf), "%llu", chipid); // 轉成10進制
   return String(chipIdBuf);
 }
 
@@ -189,7 +188,7 @@ void initWiFi() {
   oled.sendBuffer();
 }
 
-// [修改] 參數名稱改為 sensorChipId 比較明確
+// 傳送資料至後端
 bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int sat, int btn, String sensorChipId) {
   if(wifiMulti.run() != WL_CONNECTED) return false;
 
@@ -200,7 +199,7 @@ bool sendToBackend(bool isValid, float t, float h, double lat, double lng, int s
   http.addHeader("Authorization", authHeader);
 
   String json = "{";
-  // [修改] 使用 Sensor 傳過來的 ChipID
+  //  使用 Sensor 傳過來的 ChipID
   json += "\"machine_id\":\"" + sensorChipId + "\","; 
 
   if (isValid) {
