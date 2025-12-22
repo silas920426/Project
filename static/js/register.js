@@ -14,7 +14,7 @@ document.getElementById("registerBtn").addEventListener("click", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             username: username,
-            email: email,     // ⚠️ 你的後端目前沒有 email 欄位
+            email: email,     // 後端目前沒有 email 欄位
             password: password
         })
     });

@@ -1,119 +1,164 @@
-// ================== 基本設定 ==================
+// ================= 基本設定 =================
 const API_URL = "/api/sensor-data";
-const token = localStorage.getItem("authToken");
 
-// 若未登入直接導回
-if (!token) {
+// 僅前端登入狀態（不用 JWT）
+if (!localStorage.getItem("loggedIn")) {
     alert("請先登入");
-    location.href = "/login";
+    window.location.href = "/login";
 }
 
-// ================== 時間轉換 ==================
-function formatTWTime(ts) {
-    if (!ts) return "--";
-    const iso = ts.replace(" ", "T") + "Z";
+// ================= 工具：時間轉台灣 =================
+function formatToTWTime(utcStr) {
+    if (!utcStr) return "--";
+    const iso = utcStr.replace(" ", "T") + "Z";
     return new Date(iso).toLocaleString("zh-TW", { hour12: false });
 }
 
-// ================== 地圖 ==================
-let map = L.map("map").setView([23.5, 121], 7);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+// ================= 地圖 =================
+let map = L.map("map").setView([23.7, 121], 7);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18
+}).addTo(map);
+
 let marker = null;
 
 function updateMap(lat, lng) {
     if (!lat || !lng) return;
+    if (Math.abs(lat) < 0.1 && Math.abs(lng) < 0.1) return;
+
     if (!marker) {
-        marker = L.marker([lat, lng]).addTo(map);
+        marker = L.circleMarker([lat, lng], {
+            radius: 8,
+            color: "red",
+            fillColor: "red",
+            fillOpacity: 0.8
+        }).addTo(map);
     } else {
         marker.setLatLng([lat, lng]);
     }
+
     map.setView([lat, lng], 14);
 }
 
-// ================== Chart ==================
-const ctx = document.getElementById("sensorChart");
+// ================= 折線圖 =================
+const ctx = document.getElementById("sensorChart").getContext("2d");
+
 const sensorChart = new Chart(ctx, {
     type: "line",
     data: {
         labels: [],
         datasets: [
             {
-                label: "溫度 °C",
+                label: "溫度 (°C)",
                 data: [],
                 borderColor: "#e67e22",
                 tension: 0.3
             },
             {
-                label: "濕度 %",
+                label: "濕度 (%)",
                 data: [],
                 borderColor: "#3498db",
                 tension: 0.3
             }
         ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
     }
 });
 
-// ================== Dashboard 更新 ==================
+// ================= 去除重複警報 =================
+function handleAlert(last) {
+    if (last.btn !== 1) return;
+
+    const lastHandledId = localStorage.getItem("lastHandledAlertId");
+
+    // 第一次載入頁面只記錄，不跳警報
+    if (!lastHandledId) {
+        localStorage.setItem("lastHandledAlertId", last.id);
+        return;
+    }
+
+    // 只處理新的事件
+    if (Number(last.id) > Number(lastHandledId)) {
+        localStorage.setItem("lastHandledAlertId", last.id);
+
+        const displayName = last.username
+            ? `${last.username} (${last.machine_id})`
+            : last.machine_id || "未知裝置";
+
+        alert(`⚠️ 緊急警報\n\n${displayName} 已按下求救按鈕`);
+    }
+}
+
+// ================= 更新整個 Dashboard =================
 function updateDashboard(data) {
     if (!data || data.length === 0) return;
 
     const last = data[data.length - 1];
     const displayName = last.username
         ? `${last.username} (${last.machine_id})`
-        : last.machine_id;
+        : last.machine_id || "未知裝置";
 
-    // 即時顯示
+    // --- 即時數據 ---
     document.getElementById("temp").innerText = last.temp;
     document.getElementById("hum").innerText = last.hum;
     document.getElementById("sat").innerText = last.sat ?? "--";
     document.getElementById("lat").innerText = last.lat ?? "--";
     document.getElementById("lng").innerText = last.lng ?? "--";
-    document.getElementById("timestamp").innerText = formatTWTime(last.timestamp);
+    document.getElementById("timestamp").innerText = formatToTWTime(last.timestamp);
 
     const btnEl = document.getElementById("btn");
-    btnEl.innerText = last.btn === 1 ? `按下 - ${last.username}` : "未按";
-    btnEl.style.color = last.btn === 1 ? "red" : "black";
+    if (last.btn === 1) {
+        btnEl.innerText = `按下 - ${last.username}`;
+        btnEl.style.color = "red";
+    } else {
+        btnEl.innerText = "未按";
+        btnEl.style.color = "black";
+    }
 
+    // --- 環境監測面板更新 ---
     document.getElementById("big-temp").innerText = last.temp;
     document.getElementById("big-hum").innerText = last.hum;
 
-    // 地圖
-    updateMap(last.lat, last.lng);
-
-    // 表格
+    // --- 歷史紀錄面板更新 ---
     const tbody = document.querySelector("#dataTable tbody");
     tbody.innerHTML = "";
+
     [...data].reverse().slice(0, 20).forEach(r => {
-        tbody.innerHTML += `
-            <tr>
-                <td>${formatTWTime(r.timestamp)}</td>
-                <td>${r.username || r.machine_id}</td>
-                <td>${r.temp}</td>
-                <td>${r.hum}</td>
-                <td>${r.lat ?? "--"}</td>
-                <td>${r.lng ?? "--"}</td>
-                <td>${r.sat ?? "--"}</td>
-                <td style="color:${r.btn === 1 ? "red" : "black"}">
-                    ${r.btn === 1 ? "按下" : "-"}
-                </td>
-            </tr>`;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${formatToTWTime(r.timestamp)}</td>
+            <td>${r.username || r.machine_id}</td>
+            <td>${r.temp}</td>
+            <td>${r.hum}</td>
+            <td>${r.lat ?? "--"}</td>
+            <td>${r.lng ?? "--"}</td>
+            <td>${r.sat ?? "--"}</td>
+            <td style="color:${r.btn === 1 ? "red" : "black"}">
+                ${r.btn === 1 ? "按下" : "-"}
+            </td>
+        `;
+        tbody.appendChild(tr);
     });
 
-    // 圖表
-    sensorChart.data.labels = [];
-    sensorChart.data.datasets[0].data = [];
-    sensorChart.data.datasets[1].data = [];
+    // --- 地圖 ---
+    updateMap(last.lat, last.lng);
 
-    data.forEach(d => {
-        sensorChart.data.labels.push(formatTWTime(d.timestamp).split(" ")[1]);
-        sensorChart.data.datasets[0].data.push(d.temp);
-        sensorChart.data.datasets[1].data.push(d.hum);
-    });
-
+    // --- 趨勢圖表更新 ---
+    sensorChart.data.labels = data.map(d =>
+        formatToTWTime(d.timestamp).split(" ")[1]
+    );
+    sensorChart.data.datasets[0].data = data.map(d => d.temp);
+    sensorChart.data.datasets[1].data = data.map(d => d.hum);
     sensorChart.update();
+
+    // 去除重複警報
+    handleAlert(last);
 }
 
-// ================== SSE 連線 ==================
+// ================= SSE 即時更新 =================
 function startStream() {
     const es = new EventSource("/stream");
 
@@ -124,24 +169,19 @@ function startStream() {
 
     es.onerror = () => {
         es.close();
-        setTimeout(startStream, 3000);
+        setTimeout(startStream, 5000);
     };
 }
 
 startStream();
 
-// ================== 初始載入 ==================
-fetch(API_URL)
-    .then(r => r.json())
-    .then(updateDashboard);
-
-// ================== 機台註冊 ==================
+// ================= 機台管理 =================
 async function registerMachine() {
     const machineId = document.getElementById("reg-machine-id").value.trim();
     const username = document.getElementById("reg-username").value.trim();
 
     if (!machineId || !username) {
-        alert("請填完整資料");
+        alert("請填完整");
         return;
     }
 
@@ -156,7 +196,6 @@ async function registerMachine() {
     loadMachines();
 }
 
-// ================== 機台清單 ==================
 async function loadMachines() {
     const res = await fetch("/api/machines");
     const data = await res.json();
@@ -165,22 +204,22 @@ async function loadMachines() {
     tbody.innerHTML = "";
 
     data.forEach(m => {
-        tbody.innerHTML += `
-            <tr>
-                <td><input value="${m.machine_id}" data-old="${m.machine_id}"></td>
-                <td><input value="${m.username}"></td>
-                <td>
-                    <button onclick="saveMachine(this)">儲存</button>
-                    <button onclick="deleteMachine('${m.machine_id}')">刪除</button>
-                </td>
-            </tr>`;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><input value="${m.machine_id}" data-old="${m.machine_id}"></td>
+            <td><input value="${m.username}"></td>
+            <td>
+                <button onclick="saveMachine(this)">儲存</button>
+                <button onclick="deleteMachine('${m.machine_id}')">刪除</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
     });
 }
 
-// ================== 機台更新 ==================
 async function saveMachine(btn) {
-    const tr = btn.closest("tr");
-    const inputs = tr.querySelectorAll("input");
+    const row = btn.closest("tr");
+    const inputs = row.querySelectorAll("input");
 
     const res = await fetch("/api/update-machine", {
         method: "PUT",
@@ -197,15 +236,15 @@ async function saveMachine(btn) {
     loadMachines();
 }
 
-// ================== 機台刪除 ==================
 async function deleteMachine(id) {
-    if (!confirm(`確定刪除 ${id}？`)) return;
-
-    const res = await fetch(`/api/delete-machine/${id}`, {
-        method: "DELETE"
-    });
-
+    if (!confirm(`刪除 ${id}？`)) return;
+    const res = await fetch(`/api/delete-machine/${id}`, { method: "DELETE" });
     const data = await res.json();
     alert(data.message);
     loadMachines();
 }
+
+// ================= 初次載入 =================
+fetch(API_URL)
+    .then(r => r.json())
+    .then(updateDashboard);
