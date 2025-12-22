@@ -28,6 +28,7 @@ def upload():
         return jsonify({"message": "Invalid token"}), 403
 
     data = request.json
+
     conn = get_db()
     try:
         conn.execute("""
@@ -46,7 +47,18 @@ def upload():
     finally:
         conn.close()
 
-    return jsonify({"status": "success"})
+    # 回傳指令給 Gateway
+    if data.get("button") == 1:
+        return jsonify({
+            "status": "success",
+            "command": "BUZZER_ON"
+        })
+    else:
+        return jsonify({
+            "status": "success",
+            "command": "NONE"
+        })
+
 
 # ========= 讀取資料 SQL =========
 SELECT_SQL = """

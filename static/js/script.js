@@ -1,13 +1,13 @@
 // ================= 基本設定 =================
 const API_URL = "/api/sensor-data";
 
-// 僅前端登入狀態（不用 JWT）
+// 僅前端登入狀態
 if (!localStorage.getItem("loggedIn")) {
     alert("請先登入");
     window.location.href = "/login";
 }
 
-// ================= 工具：時間轉台灣 =================
+// ================= 時間轉台灣 =================
 function formatToTWTime(utcStr) {
     if (!utcStr) return "--";
     const iso = utcStr.replace(" ", "T") + "Z";
