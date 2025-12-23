@@ -195,7 +195,7 @@ async function registerMachine() {
     alert(data.message);
     loadMachines();
 }
-
+// ================= 載入機台資訊 ===========
 async function loadMachines() {
     const res = await fetch("/api/machines");
     const data = await res.json();

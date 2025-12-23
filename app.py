@@ -60,7 +60,7 @@ def upload():
         })
 
 
-# ========= 讀取資料 SQL =========
+# =========  讀取資料SQL =========
 SELECT_SQL = """
 SELECT s.*, m.username
 FROM sensor_data s
@@ -88,7 +88,7 @@ def stream():
             time.sleep(1)
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
-# ========= 網頁讀資料 =========
+# ========= 網頁新增資料 =========
 @app.route("/api/sensor-data", methods=["GET"])
 def get_data():
     conn = get_db()
@@ -126,6 +126,7 @@ def machines():
     finally:
         conn.close()
 
+# ========= 註冊機台 =========
 @app.route("/api/register-machine", methods=["POST"])
 def register_machine():
     d = request.json
@@ -139,6 +140,7 @@ def register_machine():
         return jsonify({"message": "註冊成功"})
     finally:
         conn.close()
+
 # ========= 更新機台 =========
 @app.route("/api/update-machine", methods=["PUT"])
 def update_machine():
@@ -154,6 +156,7 @@ def update_machine():
         return jsonify({"message": "更新成功"})
     finally:
         conn.close()
+
 # ========= 刪除機台 =========
 @app.route("/api/delete-machine/<mid>", methods=["DELETE"])
 def delete_machine(mid):
@@ -166,15 +169,15 @@ def delete_machine(mid):
         conn.close()
 
 # ========= 頁面路由 =========
-@app.route("/")
+@app.route("/") #網址預設
 def root():
     return redirect("/login")
 
-@app.route("/login")
+@app.route("/login") #login頁面
 def login_page():
     return render_template("login.html")
 
-@app.route("/index")
+@app.route("/index") #主頁面
 def index():
     return render_template("index.html")
 

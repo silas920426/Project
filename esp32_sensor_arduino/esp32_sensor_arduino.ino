@@ -120,7 +120,7 @@ void performTask() {
 
     int btnState = 1; 
 
-    // [修改] 組合 Payload，加入 ChipID 在最後
+    // 組合 Payload，加入 ChipID 在最後
     String payload = String(temperature, 1) + "," + String(humidity, 1) + "," +
                      String(gpsLat, 6) + "," + String(gpsLng, 6) + "," +
                      String(gpsSat) + "," + String(btnState) + "," + 
