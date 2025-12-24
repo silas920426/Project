@@ -14,7 +14,7 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# ========= Gateway 上傳（JWT token 驗證） =========
+# ========= Gateway 上傳資料到資料庫（JWT token 驗證） =========
 @app.route("/api/sensor-data", methods=["POST"])
 def upload():
     auth = request.headers.get("Authorization")
@@ -68,7 +68,7 @@ LEFT JOIN machines m ON s.machine_id = m.machine_id
 ORDER BY s.id DESC LIMIT 50
 """
 
-# ========= SSE 即時連線 =========
+# ========= SSE 即時連線(判斷是否有新資料) =========
 @app.route("/stream")
 def stream():
     def generate():
@@ -88,7 +88,7 @@ def stream():
             time.sleep(1)
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
-# ========= 網頁新增資料 =========
+# ========= 網頁取得資料 =========
 @app.route("/api/sensor-data", methods=["GET"])
 def get_data():
     conn = get_db()

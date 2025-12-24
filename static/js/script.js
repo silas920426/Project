@@ -216,7 +216,7 @@ async function loadMachines() {
         tbody.appendChild(tr);
     });
 }
-
+//==================== 更新機台資訊 =================
 async function saveMachine(btn) {
     const row = btn.closest("tr");
     const inputs = row.querySelectorAll("input");
@@ -235,7 +235,7 @@ async function saveMachine(btn) {
     alert(data.message);
     loadMachines();
 }
-
+//==================== 刪除機台資訊 =================
 async function deleteMachine(id) {
     if (!confirm(`刪除 ${id}？`)) return;
     const res = await fetch(`/api/delete-machine/${id}`, { method: "DELETE" });

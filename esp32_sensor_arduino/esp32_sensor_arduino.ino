@@ -254,18 +254,17 @@ void setup() {
 
 // --- Sensor 端流程 ---
 #ifdef INITIATING_NODE
-  // [修改] 這裡改用 ChipID，不再依賴 WiFi.macAddress()
+  // 這裡改用 ChipID
   myChipId = getChipId(); 
   Serial.print("Sensor ChipID: ");
   Serial.println(myChipId);
   
-  // 顯示在螢幕上方便註冊
   oled.clearBuffer();
   oled.setCursor(0,16); oled.print("Sensor Ready");
   oled.setCursor(0,32); oled.print("ID:");
   oled.setCursor(0,48); oled.print(myChipId);
   oled.sendBuffer();
-  delay(3000); // 暫停一下讓使用者抄寫 ID
+  delay(3000); 
 
   GPS_Serial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
   performTask();
