@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template, redirect, Response, stream_with_context
 from flask_cors import CORS
 import sqlite3, time, json, jwt, datetime
-from pyngrok import ngrok
+from pyngrok import ngrok   #新增：引入 ngrok 模組
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
