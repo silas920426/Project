@@ -1,0 +1,83 @@
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: "Microsoft JhengHei", sans-serif;
+
+    /*GIF */
+    background: url("/static/gif/background.gif") no-repeat center center fixed;
+    background-size: cover;
+    position: relative;
+}
+
+/*半透明遮罩（讓輸入框更清楚)*/
+body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.3); /* 透明黑，可調數值 */
+    backdrop-filter: blur(2px);  /* 可加可不加 */
+    z-index: 0;
+}
+
+/* 登入卡片 */
+.login-container {
+    position: relative;
+    z-index: 1; /* 讓登入框蓋在遮罩上面 */
+    background: rgba(120, 90, 240, 0.9); /* 半透明紫色 */
+    padding: 40px 50px;
+    width: 350px;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+    text-align: center;
+}
+
+.login-container h1 {
+    color: white;
+    margin-bottom: 25px;
+}
+
+.login-container label {
+    display: block;
+    text-align: left;
+    color: white;
+    margin-bottom: 5px;
+}
+
+.login-container input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border-radius: 6px;
+    border: none;
+}
+
+#loginBtn {
+    width: 100%;
+    padding: 12px;
+    background-color: #1e90ff;
+    color: white;
+    border: none;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#loginBtn:hover {
+    background-color: #187bdb;
+}
+
+.note {
+    margin-top: 15px;
+    color: white;
+}
+
+.note a {
+    color: white;
+}
+
