@@ -184,7 +184,7 @@ def index():
 
 # ========= 主程式 =========
 if __name__ == "__main__":
-
+    # --- 1. 資料庫與資料表初始化 ---
     conn = sqlite3.connect(DB_NAME)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("""
@@ -211,19 +211,33 @@ if __name__ == "__main__":
         )
     """)
 
-    # 檢查並建立預設管理員帳號 (admin / 1234)
-    # 使用 SELECT 檢查 admin 是否已存在
+    # --- 2. 檢查並建立預設管理員帳號 ---
     cursor = conn.execute("SELECT COUNT(*) FROM users WHERE username = ?", ("admin",))
     count = cursor.fetchone()[0]
-
     if count == 0:
         conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "1234"))
         print(">>> [初始化] 偵測到無使用者，已建立預設帳號: admin / 1234")
     else:
         print(">>> [初始化] 管理員帳號已存在。")
 
-
     conn.commit()
     conn.close()
 
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+    # --- 3. 啟動 ngrok 隧道 ---
+    try:
+        # 如果你有 ngrok token，請取消下面這行的註解並填入 token
+        # ngrok.set_auth_token("你的_NGROK_AUTHTOKEN")
+        
+        # 開啟 5000 端口的隧道
+        public_url = ngrok.connect(5000).public_url
+        print("-" * 50)
+        print(f" * [ngrok] 外部網址: {public_url}")
+        print(f" * [控制台] 管理頁面: http://127.0.0.1:4040")
+        print("-" * 50)
+    except Exception as e:
+        print(f">>> [錯誤] 無法啟動 ngrok: {e}")
+
+    # --- 4. 啟動 Flask 伺服器 ---
+    # 注意：使用 ngrok 時，建議將 use_reloader 設為 False 
+    # 否則 Flask 重啟時會嘗試建立多個隧道導致錯誤
+    app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)
