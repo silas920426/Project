@@ -173,8 +173,8 @@ void initWiFi() {
   Serial.print("Gateway ChipID: ");
   Serial.println(getChipId()); // 顯示 Gateway 自己的 ID
 
-  wifiMulti.addAP("Stephen_3F", "root1234");
-  wifiMulti.addAP("enohpi61", "rootroot");
+  wifiMulti.addAP("SSID1", "password1"); //(更換為可用的網路)
+  wifiMulti.addAP("SSID2", "password2"); //(更換為可用的網路)
   
   oled.clearBuffer(); oled.setCursor(0,16);
   oled.print("Connecting WiFi..."); oled.sendBuffer();
