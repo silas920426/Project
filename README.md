@@ -3,7 +3,7 @@
 
 
 使用到的語法&裝置
-EESP32-WROOM
+ESP32-WROOM
 GPS NEO-7M
 LORA(LLCC68)
 AM2120
@@ -14,7 +14,7 @@ BUTTON
 
 Flask API
 Sqlite3
-
-
+HTML
+C++
 
 https://docs.google.com/document/d/1DlmPMJ2g5L4ZRTrsz6sR4Cny-VxT1xrR/edit?usp=sharing&ouid=110515739128429267393&rtpof=true&sd=true
