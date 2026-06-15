@@ -5,7 +5,7 @@ Project Overview
 
 當災害發生導致網路基礎設施中斷時，長者可透過按鈕發送求救訊號，利用 LoRa 無線通訊技術將資料從 Sensor Device 傳送至 Gateway Device，再由 Gateway 將資料上傳至 Web Server，提供救難人員即時查看求救訊息與定位資訊。
 
-
+![image](https://github.com/silas920426/Project/blob/main/Doc1.docx)
 
 功能
 LoRa 無線通訊
