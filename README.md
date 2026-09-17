@@ -1,9 +1,9 @@
-LoRa Emergency Communication System
+ LoRa Emergency Communication System
 Project Overview
 
 本專案為大學畢業專題「颱風災害長者緊急通訊系統」。
 
-當災害發生導致網路基礎設施中斷時，長者可透過按鈕發送求救訊號，利用 LoRa 無線通訊技術將資料從 Sensor Device 傳送至 Gateway Device，再由 Gateway 將資料上傳至 Web Server，提供救難人員即時查看求救訊息與定位資訊。
+當災害發生導致網路基礎設施中斷時，可透過按鈕發送求救訊號，利用 LoRa 無線通訊技術將資料從 Sensor Device 傳送至 Gateway Device，再由 Gateway Device 將資料上傳至 Web Server，提供救難人員即時查看求救訊息與定位資訊。
 
 ![image](https://github.com/silas920426/Project/blob/main/%E7%B3%BB%E7%B5%B1%E6%9E%B6%E6%A7%8B.png)
 
@@ -18,7 +18,7 @@ Web 即時監控平台
 裝置狀態監控
 
 
-裝置
+元件
 Sensor Device
 ESP32-WROOM
 GPS NEO-7M
@@ -27,6 +27,7 @@ AM2120 溫溼度感測器
 OLED Display
 Buzzer
 Emergency Button
+
 Gateway Device
 ESP32-WROOM
 LoRa LLCC68
@@ -38,15 +39,18 @@ Python
 Flask
 RESTful API
 SQLite3
+
 前端
 HTML
 JavaScript
+
 韌體開發
 C++
 ESP32 Arduino Framework
 
 
 負責內容
+
 ESP32 韌體程式開發
 LoRa 通訊模組整合
 GPS 定位資料處理
@@ -62,6 +66,5 @@ Web 監控平台建置
 建立 Web 平台供救難人員監控設備狀態
 完成硬體、通訊、後端與前端整合驗證
 
-Technologies
 
 Python | Flask | RESTful API | SQLite | ESP32 | Arduino | LoRa | GPS | HTML | JavaScript | C++
